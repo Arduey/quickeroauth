@@ -5,7 +5,8 @@
   <h1>授权管理系统</h1>
   <p class="sub">登录后管理授权账户与核销记录</p>
 
-  <form method="post">
+  {# 登录会改变「有没有导航栏」这件 #panel 外面的事，所以这里走真跳转 #}
+  <form method="post" hx-boost="false">
     <label>用户名
       <input type="text" name="username" autocomplete="username" autofocus>
     </label>

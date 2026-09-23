@@ -11,15 +11,19 @@ from __future__ import annotations
 
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app import api, config, db
 from app import install as install_module
 from app import settings as site_settings
+
+STATIC_DIR = Path(__file__).resolve().parent / "app" / "static"
 
 # ---------------------------------------------------------------- 反代修正
 
@@ -93,6 +97,7 @@ app = FastAPI(
 
 app.include_router(api.router, prefix="/api")
 app.include_router(install_module.router)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.middleware("http")
@@ -102,7 +107,7 @@ async def installation_gate(request: Request, call_next):
         return await call_next(request)
 
     path = request.url.path
-    if path.startswith("/install"):
+    if path.startswith("/install") or path.startswith("/static"):
         return await call_next(request)
 
     if path.startswith("/api"):
