@@ -1,0 +1,6 @@
+<a href="{{ admin_base }}/" class="{% if active in [admin_base, admin_base + '/'] %}is-active{% endif %}">概览</a>
+<a href="{{ admin_base }}/accounts" class="{% if '/accounts' in active %}is-active{% endif %}">授权账户</a>
+<a href="{{ admin_base }}/orders" class="{% if '/orders' in active %}is-active{% endif %}">核销记录</a>
+<a href="{{ admin_base }}/settings" class="{% if '/settings' in active %}is-active{% endif %}">站点设置</a>
+<a href="{{ admin_base }}/import" class="{% if '/import' in active %}is-active{% endif %}">导入旧数据</a>
+<a href="{{ admin_base }}/admins" class="{% if '/admins' in active %}is-active{% endif %}">管理员</a>

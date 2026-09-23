@@ -24,9 +24,11 @@
             hx-post="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row"
             hx-include="closest tr"
             hx-target="closest tr" hx-swap="outerHTML"
+            hx-push-url="false"
             hx-indicator="closest tr">保存</button>
     <button type="button" class="plain small"
             hx-get="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row"
-            hx-target="closest tr" hx-swap="outerHTML">取消</button>
+            hx-target="closest tr" hx-swap="outerHTML"
+            hx-push-url="false">取消</button>
   </td>
 </tr>

@@ -1,3 +1,4 @@
+{% if not partial %}
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -306,42 +307,41 @@
 </style>
 </head>
 <body>
-
 {% if current %}
 <header class="nav">
   <div class="brand">授权管理<span>系统</span></div>
-  <nav id="nav">
-    <a href="{{ admin_base }}/" class="{% if active in [admin_base, admin_base + '/'] %}is-active{% endif %}">概览</a>
-    <a href="{{ admin_base }}/accounts" class="{% if '/accounts' in active %}is-active{% endif %}">授权账户</a>
-    <a href="{{ admin_base }}/orders" class="{% if '/orders' in active %}is-active{% endif %}">核销记录</a>
-    <a href="{{ admin_base }}/settings" class="{% if '/settings' in active %}is-active{% endif %}">站点设置</a>
-    <a href="{{ admin_base }}/import" class="{% if '/import' in active %}is-active{% endif %}">导入旧数据</a>
-    <a href="{{ admin_base }}/admins" class="{% if '/admins' in active %}is-active{% endif %}">管理员</a>
-  </nav>
+  <nav id="nav">{% include "admin/_nav_links.html" %}</nav>
   <div class="who"><strong>{{ current }}</strong> · <a href="{{ admin_base }}/logout" hx-boost="false">退出</a></div>
 </header>
+{% endif %}
+{% else %}
+{# 片段响应：导航在 #panel 之外，用带外替换把它一起更新（高亮跟着变） #}
+{% if current %}<nav id="nav" hx-swap-oob="true">{% include "admin/_nav_links.html" %}</nav>{% endif %}
 {% endif %}
 
 <main class="wrap">
   {#
     无刷新交互就靠这一个容器：
       hx-boost       让里面所有 <a> 和 <form> 自动走 AJAX
-      hx-target/swap 用响应里的 #panel 原地替换自己
-      hx-select      从「整页响应」里只抽出 #panel（所以服务端一行都不用改）
-      hx-select-oob  顺带用响应里的 #nav 更新导航高亮
+      hx-target/swap 用响应原地替换自己
       hx-push-url    地址栏跟着变，刷新和前进后退都正常
+
+    响应由服务端决定形状：带 HX-Request 的请求只回这一段（外加一个带外替换的
+    导航），普通请求回整页。所以这里不需要 hx-select —— 早先用它在响应里挑
+    #panel，结果行内编辑拿到的「只有一行」的响应里根本没有 #panel，整行被换成了空。
   #}
   <div id="panel"
        hx-boost="true"
        hx-target="#panel"
        hx-swap="outerHTML"
-       hx-select="#panel"
-       hx-select-oob="#nav"
        hx-push-url="true">
     {% if ok %}<div class="flash ok">{{ ok }}</div>{% endif %}
     {% if error %}<div class="flash err">{{ error }}</div>{% endif %}
     {% block content %}{% endblock %}
   </div>
 </main>
+
+{% if not partial %}
 </body>
 </html>
+{% endif %}

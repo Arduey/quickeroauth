@@ -117,6 +117,9 @@ def render(request: Request, template: str, **context: Any) -> HTMLResponse:
     payload: dict[str, Any] = {
         "admin_base": ADMIN_BASE,
         "active": request.url.path,
+        # htmx 只想要 #panel 那一段；返回整页会让它无从下手（之前就是这里出的问题）。
+        # 由模板决定输出多少 —— 不需要 hx-select 去响应里挑。
+        "partial": bool(request.headers.get("hx-request")),
         "current": current_admin(request),
         "ok": request.query_params.get("ok") or "",
         "error": context.pop("error", "") or request.query_params.get("error") or "",
