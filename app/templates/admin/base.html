@@ -271,6 +271,21 @@
   .stat .n { display: block; font-size: 25px; font-weight: 660; letter-spacing: -.02em; line-height: 1.25; }
   .stat .lbl { color: var(--ink-3); font-size: 12.5px; }
 
+  /* ---------------------------------------------------------------- 行内编辑 */
+
+  /* 输入框直接落在单元格里，要压得比表单页紧凑 */
+  td input[type=text], td select {
+    margin-top: 0; padding: 5px 8px; font-size: 12.5px; min-width: 96px;
+  }
+  td input[type=text]:focus, td select:focus { box-shadow: 0 0 0 2px rgba(47, 111, 237, .16); }
+  tr.is-editing { background: var(--brand-bg); }
+  tr.is-editing td { border-bottom-color: #dfe7fb; }
+  /* 请求进行中：整行淡下去，比转圈更少干扰 */
+  tr.htmx-request { opacity: .55; }
+  .col-act { white-space: nowrap; }
+  .col-act button + button { margin-left: 6px; }
+  .field-err { color: var(--err-ink); font-size: 11.5px; margin-top: 4px; }
+
   /* ---------------------------------------------------------------- 其它 */
 
   hr { border: 0; border-top: 1px solid var(--line-soft); margin: 18px 0; }

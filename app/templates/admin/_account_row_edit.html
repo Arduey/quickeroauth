@@ -1,0 +1,32 @@
+{# 账户列表的一行：编辑态。输入框直接落在单元格里，不用嵌套 form ——
+   htmx 的 hx-include="closest tr" 会把这一行里的输入全都带上 #}
+<tr id="acct-{{ row.typekey }}" class="is-editing">
+  <td>
+    <code>{{ row.typekey }}</code>
+    <input type="hidden" name="typekey" value="{{ row.typekey }}">
+  </td>
+  <td><input type="text" name="user" value="{{ row.user or '' }}" placeholder="用户名"></td>
+  <td><input type="text" name="email" value="{{ row.email or '' }}" placeholder="邮箱"></td>
+  <td>
+    <select name="status">
+      <option value="active" {% if state != "disabled" %}selected{% endif %}>正常</option>
+      <option value="disabled" {% if state == "disabled" %}selected{% endif %}>封禁</option>
+    </select>
+  </td>
+  <td>
+    <input type="text" name="exptime" value="{{ exptime_text }}" placeholder="2026-03-01 12:00:00">
+    {% if row_error %}<div class="field-err">{{ row_error }}</div>{% endif %}
+  </td>
+  <td><input type="text" name="count" value="{{ row.count if row.count is not none else '' }}" style="min-width:60px"></td>
+  <td class="muted">{{ row.last_time or "—" }}</td>
+  <td class="col-act">
+    <button type="submit" class="small"
+            hx-post="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row"
+            hx-include="closest tr"
+            hx-target="closest tr" hx-swap="outerHTML"
+            hx-indicator="closest tr">保存</button>
+    <button type="button" class="plain small"
+            hx-get="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row"
+            hx-target="closest tr" hx-swap="outerHTML">取消</button>
+  </td>
+</tr>

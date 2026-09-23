@@ -543,6 +543,100 @@ async def account_delete(
     return redirect("/accounts", ok="账户已删除：" + typekey)
 
 
+# ---------------------------------------------------------------- 列表行内编辑
+
+
+def _row_response(
+    request: Request,
+    row: LicenseUser,
+    editing: bool = False,
+    error: str = "",
+) -> HTMLResponse:
+    """只渲染一行。行内编辑不跳页、也不重刷整块内容，改动只落在这一个 <tr> 上。"""
+    template = (
+        "admin/_account_row_edit.html" if editing else "admin/_account_row.html"
+    )
+    return templates.TemplateResponse(
+        request,
+        template,
+        {
+            "admin_base": ADMIN_BASE,
+            "row": row,
+            "state": account_state(row),
+            "exptime_text": timeutil.fmt(row.exptime) or "",
+            "row_error": error,
+        },
+    )
+
+
+@router.get(ADMIN_BASE + "/accounts/{typekey}/row")
+async def account_row(
+    request: Request, typekey: str, session: AsyncSession = Depends(db_session)
+):
+    """一行的只读态（点「取消」时用）。"""
+    if (response := guard(request)) is not None:
+        return response
+    row = await session.get(LicenseUser, typekey)
+    if row is None:
+        return HTMLResponse("", status_code=404)
+    return _row_response(request, row)
+
+
+@router.get(ADMIN_BASE + "/accounts/{typekey}/row/edit")
+async def account_row_edit(
+    request: Request, typekey: str, session: AsyncSession = Depends(db_session)
+):
+    """一行的编辑态（点「编辑」时用）。"""
+    if (response := guard(request)) is not None:
+        return response
+    row = await session.get(LicenseUser, typekey)
+    if row is None:
+        return HTMLResponse("", status_code=404)
+    return _row_response(request, row, editing=True)
+
+
+@router.post(ADMIN_BASE + "/accounts/{typekey}/row")
+async def account_row_save(
+    request: Request,
+    typekey: str,
+    user: str = Form(""),
+    email: str = Form(""),
+    exptime: str = Form(""),
+    count: str = Form(""),
+    status: str = Form("active"),
+    session: AsyncSession = Depends(db_session),
+):
+    """保存一行，回只读态。校验不过就原样退回编辑态，输入不丢。"""
+    if (response := guard(request)) is not None:
+        return response
+
+    row = await session.get(LicenseUser, typekey)
+    if row is None:
+        return HTMLResponse("", status_code=404)
+
+    parsed = timeutil.parse(exptime)
+    if parsed is None:
+        # 退回编辑态而不是丢掉这一行：让用户看到是哪一格有问题
+        return _row_response(
+            request, row, editing=True, error="格式应如 2026-03-01 12:00:00"
+        )
+
+    row.user = (user or "").strip() or None
+    row.email = (email or "").strip() or None
+    row.exptime = parsed
+    row.status = "disabled" if status == "disabled" else "active"
+    if str(count).strip() != "":
+        try:
+            row.count = int(count)
+        except ValueError:
+            return _row_response(
+                request, row, editing=True, error="使用次数要填数字"
+            )
+
+    await session.commit()
+    return _row_response(request, row)
+
+
 # ---------------------------------------------------------------- 订单
 
 

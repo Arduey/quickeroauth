@@ -1,0 +1,20 @@
+{# 账户列表的一行：只读态。编辑、取消、保存后都回到这个片段 #}
+<tr id="acct-{{ row.typekey }}">
+  <td><a href="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}">{{ row.typekey }}</a></td>
+  <td>{{ row.user or "—" }}</td>
+  <td>{{ row.email or "—" }}</td>
+  <td>
+    <span class="tag {{ state }}">
+      {% if state == "active" %}有效{% elif state == "expired" %}已过期{% else %}已封禁{% endif %}
+    </span>
+  </td>
+  <td>{{ row.exptime }}</td>
+  <td>{{ row.count if row.count is not none else "—" }}</td>
+  <td class="muted">{{ row.last_time or "—" }}</td>
+  <td class="col-act">
+    <button type="button" class="plain small"
+            hx-get="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row/edit"
+            hx-target="closest tr" hx-swap="outerHTML"
+            hx-indicator="closest tr">编辑</button>
+  </td>
+</tr>
