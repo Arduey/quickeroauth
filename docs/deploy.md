@@ -54,9 +54,9 @@
 │   ├── db.py             # SQLAlchemy async engine / session
 │   ├── models.py         # ORM 模型
 │   ├── api.py            # /api 三个业务接口
-│   ├── admin.py          # sqladmin 管理后台
+│   ├── admin.py          # 管理后台（自研）
 │   ├── install.py        # 安装向导
-│   └── templates/        # Jinja2 模板
+│   └── templates/        # 页面模板
 └── sql/
     └── schema.sql        # 建表脚本
 ```
@@ -148,7 +148,10 @@ Let's Encrypt 证书 90 天有效，宝塔会自动续签并自动重载，你�
 依赖没装全。宝塔「Python 项目」里的「安装依赖」是异步执行的，在它跑完之前启动会失败——等它装完，再点一次「重启」。
 
 **`/admin` 打开报 500**
-大概率是 `sqladmin` 的版本和 SQLAlchemy 2.0 不搭。把 `requirements.txt` 里的 `sqladmin>=0.16` 提到更高（比如 `>=0.19`），重新安装依赖再重启。
+先看日志。常见原因是数据库没连上（`config.json` 里的连接信息不对），或者表结构没对齐——程序启动时会自动补缺失的列、删废弃的列，那一步失败的话日志里会有 `ALTER TABLE` 的痕迹。
+
+**打开后台一直被跳到 `127.0.0.1`**
+站点域名没填。宝塔自动生成的反代配置经常不传 `Host` 头，后端会把自己当成 127.0.0.1，所有跳转就都指向它。应用会用「站点设置」里的域名把 `Host` 补回来，所以填上域名即可，改完立即生效、不用重启。
 
 **连数据库报 `cryptography package is required`**
 MySQL 8 默认用 `caching_sha2_password` 认证，PyMySQL 走这套认证需要 `cryptography`。它已经在 `requirements.txt` 里了，如果报这个错说明依赖没装全，重装一次。

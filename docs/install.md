@@ -19,7 +19,7 @@
 
 - Python 版本 ≥ 3.10
 - 项目目录可写（要落 `config.json`）
-- 依赖可导入：`fastapi` / `sqlalchemy` / `aiomysql` / `bcrypt` / `sqladmin` / `jinja2`
+- 依赖可导入：`fastapi` / `sqlalchemy` / `aiomysql` / `bcrypt` / `itsdangerous` / `jinja2` / `httpx`
 - 不通过就**逐条列出缺什么**，而不是抛一个 traceback
 
 ### 2 · 数据库

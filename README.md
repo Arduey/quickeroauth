@@ -1,7 +1,7 @@
 # 授权管理系统
 
-FastAPI + MySQL 的授权服务。客户端凭 `typekey` 在线校验授权；用户购买后凭订单号
-核销，服务端向发卡平台核对订单后把有效期叠加到账户上。
+FastAPI + MySQL 的授权服务。客户端凭 `typekey` 在线校验授权；用户购买后凭订单号核销，
+服务端向发卡平台核对订单，拿到结果后把有效期叠加到账户上。
 
 部署方式：Debian + 宝塔面板，全程鼠标操作，不需要命令行。详见 [docs/deploy.md](docs/deploy.md)。
 
@@ -14,20 +14,21 @@ config.json             安装向导生成，不进版本库
 sql/schema.sql          建表脚本，安装向导执行的就是它
 app/
   config.py             config.json 读写
-  db.py                 数据库引擎与会话（统一 SET time_zone='+08:00'）
+  db.py                 数据库引擎与会话（统一 SET time_zone='+08:00'）；表结构自动对齐
   models.py             ORM 模型（表结构以 schema.sql 为准）
   timeutil.py           北京时间工具
-  settings.py           setting 表读写（可在后台改的业务配置）
+  settings.py           setting 表读写（能在后台改的业务配置）
   platform.py           向发卡平台查单
   security.py           bcrypt 密码哈希 + 登录失败限流
   api.py                /api 三个业务接口
-  admin.py              sqladmin 管理后台
+  admin.py              管理后台（自研，服务端渲染）
   install.py            安装向导
   templates/
     install.html        安装向导页面
+    admin/              后台页面
 docs/
   api.md                接口契约
-  admin.md              管理后台设计
+  admin.md              管理后台说明
   install.md            安装向导设计
   deploy.md             部署文档
 ```
@@ -40,14 +41,16 @@ docs/
 uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-只监听 `127.0.0.1`，外部流量经宝塔生成的站点进来，8000 端口不对外开放。
+只监听 `127.0.0.1`，外部流量经宝塔生成的站点进来，端口不对外开放。
 
-本地调试：
+## 数据表
 
-```
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
+| 表 | 说明 |
+|---|---|
+| `license_user` | 授权账户。`typekey` 主键，含有效期 `exptime` 和状态 `status` |
+| `license_order` | 核销记录。`ordernumber` 主键，一张订单只能核销一次 |
+| `admin_user` | 后台登录账号 |
+| `setting` | 站点设置（键值对） |
 
 ## 约定
 
@@ -62,18 +65,18 @@ uvicorn main:app --reload --port 8000
 | `config.json` | 会话密钥、数据库连接、后台路径、会话时长 | 重启进程 |
 | `setting` 表 | 平台地址、商户邮箱、试用天数、站点域名 | 立即生效，在后台改 |
 
-**表结构以 `sql/schema.sql` 为唯一真相。** SQLAlchemy 模型只做映射，不用
-`metadata.create_all` 建表。改表结构时两边都要动。
+**表结构以 `sql/schema.sql` 为唯一真相。** ORM 模型只做映射，不用 `metadata.create_all` 建表。
+已经跑着的库靠 `db.ensure_schema()` 跟上：启动时自动补缺失的列、删掉已废弃的列。
 
-**`typekey` 由客户端生成。** 服务端不生成、不校验前缀合法性，只校验格式
-（非空、长度 ≤ 64）。它的前缀在核销时跟平台返回的 `type` 比对。
+**`typekey` 由客户端生成。** 服务端不生成、不校验前缀合法性，只校验格式（非空、长度 ≤ 64）。
+它的前缀在核销时跟平台返回的 `type` 比对。
 
 ## 接口
 
 | 接口 | 说明 |
 |---|---|
 | `POST /api/trial` | 试用申请，一个 `typekey` 终身只能领一次 |
-| `POST /api/verify` | 在线校验；只有未过期才计数、才更新 `last_time` |
+| `POST /api/verify` | 在线校验；只有未过期且未封禁才计数、才更新 `last_time` |
 | `POST /api/redeem` | 订单核销，服务端自己向平台查单 |
 
 统一响应包 `{code, message, data}`，业务结果一律 HTTP 200。详细契约见 [docs/api.md](docs/api.md)。

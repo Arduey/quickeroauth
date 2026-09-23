@@ -1,85 +1,71 @@
-# 管理后台设计
+# 管理后台
 
-## 选型：sqladmin
+## 为什么是自己写的
 
-**理由**
+最初用 sqladmin，放弃了。原因按重要性排：
 
-- 零前端代码，不用装 Node，不需要构建步骤 —— 和一键部署的要求一致
-- 把 SQLAlchemy 模型注册进去就有完整的增删改查、搜索、分页、排序、筛选、CSV 导出
-- 自带 `AuthenticationBackend` 做登录，不用自己写会话逻辑
-- 纯 Python 依赖，`requirements.txt` 装完即用
+1. **版本不兼容会直接崩**。它把 `session_max_age` 参数原样转发给 Starlette 的 `SessionMiddleware`，而后者只认 `max_age` —— 报错还发生在"构建中间件"那一步，启动日志里看不出来，直到第一个请求打进来才 500。
+2. **界面没有中文**，而且它的可用语言是硬编码在源码里的，只能自己往里注入词条。
+3. **它是「模型级 CRUD」**：改 `exptime` 只能手填一个时间值，做不了「在现有基础上加 30 天」这种授权系统真正需要的操作。
+4. **开发时无法本地验证它的 API**，每撞一次错就要在服务器上重启试一次。
 
-**代价**
+现在的后台是服务端渲染的独立实现，不依赖任何 admin 框架。
 
-- 界面默认是英文的（可以用它的 `translations` 机制换成中文，需要写一份词条映射）
-- 它是「模型级」的表格页，不是「任意表任意字段」的通用数据库浏览器。将来加表就要多注册一个视图
-- 改数据是直接改值（比如把 `exptime` 改成某个时间），没有「在现有基础上加 30 天」这种业务操作。如果后面需要，再单独加一个自定义页面
+## 页面
 
-## 身份体系：两套，互不相通
+| 路径 | 说明 |
+|---|---|
+| `/admin/` | 概览：账户总数、当前有效、已封禁、今日新增、近 7 天有使用、今日核销；即将到期 Top 10；最近核销 10 条 |
+| `/admin/accounts` | 账户列表：按 账户标识 / 用户名 / 邮箱 搜索，按状态（有效 / 已过期 / 已封禁）筛选，分页 |
+| `/admin/accounts/new` | 新建账户 |
+| `/admin/accounts/{typekey}` | 账户详情：改基本信息、一键加时长、封禁 / 解封、删除；下方列出该账户的全部核销记录 |
+| `/admin/orders` | 核销记录：按 订单号 / 账户标识 / 商品标题 搜索，分页，删除单条 |
+| `/admin/settings` | 站点设置（改完立即生效） |
+| `/admin/import` | 导入旧数据（JSON / CSV） |
+| `/admin/admins` | 管理员账号：增删、改密码 |
+
+## 加时长的规则
+
+和 `/api/redeem` **完全一致**，不搞第二套：
+
+```
+未过期 → 从原到期日往后加
+已过期 → 从现在起算
+等价于 max(exptime, now) + 时长
+```
+
+## 登录
+
+- 签名 cookie（itsdangerous），密钥取 `config.json` 里的 `secret_key`，有效期取 `app.session_hours`
+- Cookie 是 `HttpOnly` + `SameSite=Lax` + `Secure`
+- 登录失败限流：同一 IP 15 分钟内 5 次失败即锁定。**做在应用进程的内存里**，不依赖 Nginx 配置
+- 这条限流在单进程下是准的。将来如果用多 worker 跑，得把它换成共享存储（Redis 之类），否则每个 worker 各算各的
+- 来源 IP 优先取 `CF-Connecting-IP`（前面套了 Cloudflare 时），其次 `X-Forwarded-For` 第一段。取错了会出现「一个人试错把所有人锁上」
+
+## 和业务接口的关系
+
+两套身份**完全隔离**：
 
 | | 业务侧 | 后台侧 |
 |---|---|---|
 | 表 | `license_user` | `admin_user` |
-| 凭证 | `typekey`（客户端持有） | 用户名 + 密码（人登录） |
+| 凭证 | `typekey` | 用户名 + 密码 |
 | 路径 | `/api/*` | `/admin/*` |
-| 用途 | 试用、校验、核销 | 查改数据 |
 
-`admin_user` 表已经加进 `sql/schema.sql`。
+没有一行共用的鉴权代码。
 
-**密码哈希用 bcrypt**。注意一个坑：`passlib` 1.7.4 和 `bcrypt` 4.x 存在版本兼容警告（会往日志里刷错误信息，虽然能跑）。建议直接在 `bcrypt` 库上调用，或者用 `pwdlib`，别绕 `passlib`。
+## 改数据时的注意
 
-## 视图
+后台是直接改数据库的，会**绕过所有业务规则**。三个典型情况：
 
-| 视图 | 展示列 | 可搜索 | 可排序 |
-|---|---|---|---|
-| **账户** `license_user` | `typekey` `user` `email` `exptime` `last_time` `count` `addtime` | `typekey` `user` `email` | `addtime` `exptime` `last_time` `count` |
-| **订单** `license_order` | `ordernumber` `typekey` `name` `sku` `money` `count` `ordertime` `usetime` | `ordernumber` `typekey` `name` | `ordertime` `usetime` |
-| **管理员** `admin_user` | `id` `username` `created_at` `last_login` | `username` | `created_at` |
-| **站点设置** `setting` | `skey` `svalue` `remark` `updatetime` | `skey` | `updatetime` |
+- **直接改 `exptime`** → 不产生核销记录，事后没人能解释"这个到期时间是怎么来的"。日常操作请用「加时长」，它有语义。
+- **删账户** → 它的核销记录会留下来（两张表之间没有外键，故意的）。
+- **删核销记录** → 那张订单号就**可以再次被核销**了（幂等的依据是"订单号是否已存在"）。这是设计使然：它是撤销核销的手段，但要知道后果。
 
-`password_hash` 绝不出现在列表页；新增管理员时用表单输入明文、后端哈希后落库。
+## 导入旧数据
 
-四个视图都开放增删改（`can_create` / `can_edit` / `can_delete`）。CSV 导出建议开着——排查问题时很有用。
+见 `docs/` 里关于迁移的说明。要点：
 
-**站点设置**这张是重点：平台地址、商户邮箱、试用天数这些业务配置都存这里，改完**即时生效**——应用内存里有一份缓存，后台保存时同步刷新，**不需要重启进程**。
-
-## 安全
-
-因为管理后台要「随时随地能打开」，它就是公网可达的，这几条是必须项：
-
-1. **HTTPS 必须开**（宝塔域名管理的 SSL）。否则密码在公网上明文跑。
-2. **登录限流**：同一 IP 15 分钟内失败 5 次即锁定，锁定时长递增。做在应用层（用 `slowapi` 或自己写中间件）——不依赖 Nginx 配置，这样宝塔那边改了什么都不会让这层失效。
-3. **会话 Cookie**：`HttpOnly` + `Secure` + `SameSite=Lax`。`SameSite=Lax` 顺便挡掉大部分 CSRF。
-4. **会话密钥**：由安装向导页随机生成，写进 `config.json`，用来签名会话 Cookie。**这个值不能是硬编码默认值**。
-5. **会话过期**：默认 8 小时不活动即失效。
-6. **后台路径可配置**：默认 `/admin`，但允许在配置里改成别的（比如 `/x7k2`），能挡掉一批扫路径的机器人。
-7. **可选 IP 白名单**：配置项，默认关闭。你固定办公网络时打开，安全等级立刻上一个台阶。
-
-## 实现要点
-
-**依赖**
-
-```
-fastapi
-uvicorn[standard]
-sqlalchemy[asyncio]>=2.0
-aiomysql          # 纯 Python 驱动，Debian 上不需要编译，比 asyncmy 稳妥
-sqladmin
-bcrypt
-itsdangerous      # SessionMiddleware 的签名
-slowapi           # 限流（可选）
-```
-
-**挂载方式**：业务接口挂 `/api`，sqladmin 挂 `/admin`，两者用各自的鉴权；`admin_user` 的密码校验和 `license_user` 的 `typekey` 校验没有任何共用代码。
-
-**建表归属**：`sql/schema.sql` 是唯一的表结构真相，安装向导页执行它。SQLAlchemy 模型只是映射，**不用** `metadata.create_all` 建表。代价是改表结构时两边都要动，好处是建表这件事始终有一份看得见、可审计、能手动导入的 SQL。这个项目规模下不建议引入 Alembic。
-
-## 待你确认
-
-| # | 项 | 默认 |
-|---|---|---|
-| 1 | 后台路径 | `/admin` |
-| 2 | 界面语言 | 英文（要不要我做中文词条） |
-| 3 | 登录失败锁定阈值 | 15 分钟 5 次 |
-| 4 | 会话有效期 | 8 小时 |
-| 5 | IP 白名单 | 关闭 |
+- 支持 supabase 导出的 **JSON 和 CSV**
+- 只增不改：已存在的 `typekey` / `ordernumber` 直接跳过，重复导入不会弄坏数据
+- **账户导入必须勾选「加 8 小时」** —— 旧库的 `tooltype.addtime / exptime` 存的是 UTC，`last_time` 却是北京时间。这是历史遗留的不一致，漏掉这一步所有老用户的到期时间会早 8 小时。
