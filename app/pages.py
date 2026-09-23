@@ -25,7 +25,8 @@ async def home(request: Request):
         {
             "admin_base": config.admin_path(),
             "active": "/",
-            "current": None,   # 访客，不显示后台导航
+            "current": None,      # 访客
+            "show_console": True, # 顶栏只显示「控制台」入口
             "partial": False,
             "ok": "",
             "error": "",

@@ -352,6 +352,13 @@
   <nav id="nav">{% include "admin/_nav_links.html" %}</nav>
   <div class="who"><strong>{{ current }}</strong> · <a href="{{ admin_base }}/logout" hx-boost="false">退出</a></div>
 </header>
+{% elif show_console %}
+{# 访客页面（首页）：顶栏只留一个控制台入口，不暴露后台的导航结构 #}
+<header class="nav">
+  <div class="brand">授权管理<span>系统</span></div>
+  <div style="flex:1"></div>
+  <a class="btn plain small" href="{{ admin_base }}/" hx-boost="false">控制台</a>
+</header>
 {% endif %}
 {% else %}
 {# 片段响应：导航在 #panel 之外，用带外替换把它一起更新（高亮跟着变） #}
