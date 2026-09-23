@@ -2,8 +2,9 @@
 {% block title %}登录{% endblock %}
 {% block content %}
 <div class="card narrow">
-  <h1 style="margin-bottom:4px">授权管理系统</h1>
-  <p class="muted" style="margin-top:0">请登录后继续</p>
+  <h1>授权管理系统</h1>
+  <p class="sub">登录后管理授权账户与核销记录</p>
+
   <form method="post">
     <label>用户名
       <input type="text" name="username" autocomplete="username" autofocus>
@@ -11,7 +12,7 @@
     <label>密码
       <input type="password" name="password" autocomplete="current-password">
     </label>
-    <button type="submit">登录</button>
+    <button type="submit" style="width:100%;padding:10px 15px;margin-top:4px">登录</button>
   </form>
 </div>
 {% endblock %}

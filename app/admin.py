@@ -116,6 +116,7 @@ async def db_session() -> AsyncIterator[AsyncSession]:
 def render(request: Request, template: str, **context: Any) -> HTMLResponse:
     payload: dict[str, Any] = {
         "admin_base": ADMIN_BASE,
+        "active": request.url.path,
         "current": current_admin(request),
         "ok": request.query_params.get("ok") or "",
         "error": context.pop("error", "") or request.query_params.get("error") or "",
