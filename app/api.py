@@ -232,9 +232,12 @@ async def redeem(payload: RedeemIn, session: AsyncSession = Depends(get_session)
             return envelope("PLATFORM_CONFIG", "发卡平台的商户邮箱配置有误")
         return envelope("ORDER_NOT_FOUND", "订单不存在")
 
-    # 订单归属：平台返回的 type 就是 typekey 的前缀
+    # 订单归属。
+    # 平台上的「分类」字段填的是完整商品名（如「亚马逊-Quicker授权」），
+    # 而 typekey 的前缀是产品线名（「亚马逊」），所以两边都取第一段来比。
     order_type = str(order.get("type") or "").strip()
-    if order_type != prefix:
+    order_series = order_type.split("-")[0]
+    if order_series != prefix:
         # message 沿用旧系统的文案（客户端拿它展示），
         # 但把订单真实的归属放进 data：只报「非 X 系列」帮不上忙，
         # 得让人知道这张订单到底属于哪个系列
