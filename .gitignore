@@ -8,6 +8,9 @@ env/
 # 安装向导生成的配置，含会话密钥和数据库密码
 config.json
 
+# 安装过程中的临时状态，装完自动删除
+install_state.json
+
 *.log
 .idea/
 .vscode/

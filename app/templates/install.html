@@ -157,7 +157,7 @@
     {% elif already %}
       <h2>系统已安装</h2>
       <div class="done-box">
-        <p>不需要重复安装。</p>
+        <p>后台地址：<code>https://{{ site_domain }}{{ admin_path }}</code></p>
         <p class="hint">确实要重装的话，手动删掉项目根目录下的 <code>config.json</code>，再访问本页。</p>
       </div>
     {% endif %}
