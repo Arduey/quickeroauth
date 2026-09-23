@@ -12,12 +12,13 @@ from typing import Optional
 
 from sqladmin import Admin, ModelView
 from sqladmin.authentication import AuthenticationBackend
+from sqladmin.i18n import I18nConfig
 from sqlalchemy import select
 from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
-from . import config, db, security, timeutil
+from . import config, db, i18n as i18n_module, security, timeutil
 from .models import AdminUser, LicenseOrder, LicenseUser, Setting
 
 
@@ -215,12 +216,17 @@ def build_admin(app, engine) -> Admin:
     secret_key = str((config.get() or {}).get("secret_key") or "")
     backend = AdminAuth(secret_key=secret_key, max_age=config.session_hours() * 3600)
 
+    options: dict = {}
+    if i18n_module.install():
+        options["i18n_config"] = I18nConfig(default_locale=i18n_module.LOCALE_CODE)
+
     admin = Admin(
         app=app,
         engine=engine,
         authentication_backend=backend,
         base_url=config.admin_path(),
         title="授权管理后台",
+        **options,
     )
     admin.add_view(LicenseUserAdmin)
     admin.add_view(LicenseOrderAdmin)

@@ -18,8 +18,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from app import api, config, db
+from app import i18n as i18n_module
 from app import install as install_module
 from app import settings as site_settings
+
+# 必须在构造管理后台之前执行：把中文词条塞进 sqladmin
+i18n_module.install()
 
 # ---------------------------------------------------------------- 反代修正
 
