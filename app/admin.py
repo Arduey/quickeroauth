@@ -640,55 +640,26 @@ async def account_row_save(
     return _row_response(request, row)
 
 
-@router.post(ADMIN_BASE + "/accounts/{typekey}/row/grant")
-async def account_row_grant(
-    request: Request,
-    typekey: str,
-    months: int = 0,
-    days: int = 0,
-    session: AsyncSession = Depends(db_session),
-):
-    """行内快捷加时。
-
-    和 /api/redeem 用同一套规则：未过期从原到期日往后加，已过期从现在起算。
-    这两个参数走 query string，就不必把编辑态里那些输入框一起带上来了。
-    """
-    if (response := guard(request)) is not None:
-        return response
-
-    row = await session.get(LicenseUser, typekey)
-    if row is None:
-        return HTMLResponse("", status_code=404)
-
-    if months == 0 and days == 0:
-        return _row_response(request, row, editing=True, error="要加多少得给个数")
-
-    now = timeutil.now()
-    base = timeutil.later_of(row.exptime, now)
-    if months:
-        base = timeutil.add_months(base, months)
-    if days:
-        base = timeutil.add_days(base, days)
-
-    row.exptime = base
-    row.status = "active"          # 加时顺带解封，否则改了有效期还是用不了
-    await session.commit()
-    return _row_response(request, row)
-
 @router.post(ADMIN_BASE + "/accounts/{typekey}/row/preview")
 async def account_row_preview(
     request: Request,
     typekey: str,
-    exptime: str = "",
     months: int = 0,
     days: int = 0,
 ):
     """只算不写：把加完之后的到期时间回填到输入框，等用户自己点保存。
 
     规则和核销一致，另外按输入框里的值判断：填的是过去的时间，就从现在起算。
+
+    基准值显式地「请求体优先、其次 query」两处都读：之前把它声明成普通 str
+    参数，FastAPI 按 query 解析，而 htmx 是放在请求体里的，于是永远读到空串，
+    连点就不叠加了。依赖框架的参数绑定规则在这里太脆。
     """
     if (response := guard(request)) is not None:
         return response
+
+    form = await request.form()
+    exptime = str(form.get("exptime") or request.query_params.get("exptime") or "")
 
     parsed = timeutil.parse(exptime)
     if parsed is None:
