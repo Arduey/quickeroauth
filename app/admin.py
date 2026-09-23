@@ -22,12 +22,23 @@ from .models import AdminUser, LicenseOrder, LicenseUser, Setting
 
 
 def client_ip(request: Request) -> str:
-    """取真实来源 IP。走了 Nginx 反代，真实 IP 在 X-Forwarded-For 里。"""
+    """取真实来源 IP。
+
+    前面可能套了两层：Cloudflare + Nginx。Cloudflare 会把真实访客地址放在
+    CF-Connecting-IP 里，优先用它；否则退回到 X-Forwarded-For 的第一段。
+    如果取错了（比如取到 Cloudflare 自己的地址），登录限流会把所有访客算成
+    同一个人，一个人试错就把大家全锁上。
+    """
+    cf = request.headers.get("cf-connecting-ip")
+    if cf and cf.strip():
+        return cf.strip()
+
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         first = forwarded.split(",")[0].strip()
         if first:
             return first
+
     return request.client.host if request.client else "unknown"
 
 
