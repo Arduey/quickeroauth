@@ -29,6 +29,13 @@
 
   <div class="card">
     <h2 style="margin-top:0">加时长</h2>
+    <div class="quick" style="margin-bottom:12px">
+      {% for label, qs in [("+1月", "months=1"), ("+3月", "months=3"), ("+1年", "months=12"), ("+7天", "days=7")] %}
+      <button type="button"
+              hx-post="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/grant?{{ qs }}"
+              hx-target="#panel" hx-swap="outerHTML">{{ label }}</button>
+      {% endfor %}
+    </div>
     <form method="post" action="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/grant">
       <div class="row">
         <label>加几个月<input type="number" name="months" value="0"></label>

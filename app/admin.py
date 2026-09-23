@@ -640,6 +640,42 @@ async def account_row_save(
     return _row_response(request, row)
 
 
+@router.post(ADMIN_BASE + "/accounts/{typekey}/row/grant")
+async def account_row_grant(
+    request: Request,
+    typekey: str,
+    months: int = 0,
+    days: int = 0,
+    session: AsyncSession = Depends(db_session),
+):
+    """行内快捷加时。
+
+    和 /api/redeem 用同一套规则：未过期从原到期日往后加，已过期从现在起算。
+    这两个参数走 query string，就不必把编辑态里那些输入框一起带上来了。
+    """
+    if (response := guard(request)) is not None:
+        return response
+
+    row = await session.get(LicenseUser, typekey)
+    if row is None:
+        return HTMLResponse("", status_code=404)
+
+    if months == 0 and days == 0:
+        return _row_response(request, row, editing=True, error="要加多少得给个数")
+
+    now = timeutil.now()
+    base = timeutil.later_of(row.exptime, now)
+    if months:
+        base = timeutil.add_months(base, months)
+    if days:
+        base = timeutil.add_days(base, days)
+
+    row.exptime = base
+    row.status = "active"          # 加时顺带解封，否则改了有效期还是用不了
+    await session.commit()
+    return _row_response(request, row)
+
+
 # ---------------------------------------------------------------- 订单
 
 
