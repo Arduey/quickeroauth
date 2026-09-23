@@ -575,8 +575,21 @@ async def install_site_submit(
     if platform_url and not platform_url.startswith(("http://", "https://")):
         return page(request, 5, state, error="平台地址要以 http:// 或 https:// 开头")
 
+    domain = (site_domain or "").strip()
+    for prefix in ("https://", "http://"):
+        if domain.lower().startswith(prefix):
+            domain = domain[len(prefix):]
+    domain = domain.strip().strip("/")
+    if not domain:
+        return page(
+            request,
+            5,
+            state,
+            error="站点域名必须填写——后台的跳转地址要靠它生成",
+        )
+
     state["site"] = {
-        "site_domain": (site_domain or "").strip(),
+        "site_domain": domain,
         "trial_days": str(trial_days_value),
         "platform_base_url": platform_url,
         "platform_email": (platform_email or "").strip(),

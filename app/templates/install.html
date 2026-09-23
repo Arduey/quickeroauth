@@ -131,7 +131,8 @@
   <div class="card">
     <h2>第 5 步 · 站点设置</h2>
     <form method="post" action="/install/site">
-      <label>站点域名 <input type="text" name="site_domain" value="{{ site.site_domain }}" placeholder="lic.example.com"></label>
+      <label>站点域名（必填，只填域名，不要带 <code>http://</code> 或斜杠）
+        <input type="text" name="site_domain" value="{{ site.site_domain }}" placeholder="pay.arduey.top" required></label>
       <div class="grid">
         <label>默认试用天数 <input type="number" name="trial_days" min="1" value="{{ site.trial_days }}"></label>
         <label>会话有效期（小时） <input type="number" name="session_hours" min="1" value="{{ site.session_hours }}"></label>
