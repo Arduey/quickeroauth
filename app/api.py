@@ -260,7 +260,8 @@ async def redeem(payload: RedeemIn, session: AsyncSession = Depends(get_session)
     now = timeutil.now()
 
     row = await session.get(LicenseUser, typekey)
-    if row is None:
+    created = row is None
+    if created:
         # 订单比账户先到：先建号给 1 天，再在这 1 天之上叠加
         row = LicenseUser(
             typekey=typekey,
@@ -321,5 +322,8 @@ async def redeem(payload: RedeemIn, session: AsyncSession = Depends(get_session)
             "exptime": timeutil.fmt(new_expiry),
             "permanent": is_permanent,
             "added_months": None if is_permanent else months,
+            # 本次是否顺带新建了账户。客户端看到 true 就该提醒用户核对标识 ——
+            # 一个字符打错就会走到这里，而订单已经消耗掉了。
+            "created": created,
         },
     )

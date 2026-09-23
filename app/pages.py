@@ -63,9 +63,9 @@ API_DOCS: list[dict] = [
             "这样「先付款、后安装」的用户也能直接用。"
         ),
         "request": '{\n  "typekey": "Pro-8f3a91c2",\n  "ordernumber": "AFD2026021400001"\n}',
-        "response": '{\n  "code": "REDEEMED",\n  "message": "订单使用成功，有效期至 2027-03-01 13:05:22",\n  "data": {\n    "typekey": "Pro-8f3a91c2",\n    "ordernumber": "AFD2026021400001",\n    "exptime": "2027-03-01 13:05:22",\n    "permanent": false,\n    "added_months": 12\n  }\n}',
+        "response": '{\n  "code": "REDEEMED",\n  "message": "订单使用成功，有效期至 2027-03-01 13:05:22",\n  "data": {\n    "typekey": "Pro-8f3a91c2",\n    "ordernumber": "AFD2026021400001",\n    "exptime": "2027-03-01 13:05:22",\n    "permanent": false,\n    "added_months": 12,\n    "created": false      // 本次是否顺带新建了账户\n  }\n}',
         "codes": [
-            ("REDEEMED", "订单使用成功，有效期至 …", "核销成功"),
+            ("REDEEMED", "订单使用成功，有效期至 …", "核销成功。data.created 为 true 表示本次顺带新建了账户，客户端应提醒用户核对标识"),
             ("ORDER_ALREADY_USED", "订单已于 … 使用过", "该订单号已核销过，一张订单只能用一次"),
             ("ORDER_NOT_FOUND", "订单不存在", "平台查不到，或该订单尚未支付"),
             ("PLATFORM_UNAVAILABLE", "订单查询失败", "平台暂时不可用，稍后可重试"),
