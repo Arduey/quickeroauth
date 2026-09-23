@@ -235,7 +235,14 @@ async def redeem(payload: RedeemIn, session: AsyncSession = Depends(get_session)
     # 订单归属：平台返回的 type 就是 typekey 的前缀
     order_type = str(order.get("type") or "").strip()
     if order_type != prefix:
-        return envelope("PRODUCT_MISMATCH", "输入的订单非{}系列订单".format(prefix))
+        # message 沿用旧系统的文案（客户端拿它展示），
+        # 但把订单真实的归属放进 data：只报「非 X 系列」帮不上忙，
+        # 得让人知道这张订单到底属于哪个系列
+        return envelope(
+            "PRODUCT_MISMATCH",
+            "输入的订单非{}系列订单".format(prefix),
+            {"order_type": order_type, "expected_prefix": prefix},
+        )
 
     months, is_permanent = parse_sku(str(order.get("sku") or ""))
     if months is None:
