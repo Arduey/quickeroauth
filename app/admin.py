@@ -54,9 +54,10 @@ def current_admin(request: Request) -> Optional[str]:
     try:
         data = _serializer().loads(raw, max_age=_session_max_age())
     except (BadSignature, SignatureExpired):
+        # 正常的「没登录 / 会话过期 / cookie 被改过」
         return None
-    except Exception:  # noqa: BLE001
-        return None
+    # 这里刻意不吞别的异常：签名密钥读不到、itsdangerous 没装上，
+    # 都会让登录静默失败、谁都进不了后台，必须让它炸在日志里。
     if isinstance(data, dict):
         name = data.get("username")
         if name:
