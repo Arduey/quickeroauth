@@ -227,6 +227,9 @@ async def redeem(payload: RedeemIn, session: AsyncSession = Depends(get_session)
     except platform.PlatformError as exc:
         if exc.kind == "unavailable":
             return envelope("PLATFORM_UNAVAILABLE", "订单查询失败")
+        if "商户" in (exc.message or ""):
+            # 平台回的是「商户不存在」，说明填的商户邮箱不对，不是这张订单的问题
+            return envelope("PLATFORM_CONFIG", "发卡平台的商户邮箱配置有误")
         return envelope("ORDER_NOT_FOUND", "订单不存在")
 
     # 订单归属：平台返回的 type 就是 typekey 的前缀

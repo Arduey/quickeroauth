@@ -58,7 +58,9 @@ async def query_order(base_url: str, email: str, order_no: str) -> dict[str, Any
         raise PlatformError("not_found", "订单不存在")
 
     if response.status_code != 200 or not payload.get("ok"):
-        raise PlatformError("not_found", "订单不存在")
+        # 把平台自己的说明带出去，便于区分「订单不存在」和「配置不对」
+        detail = str(payload.get("message") or "").strip()
+        raise PlatformError("not_found", detail or "订单不存在")
 
     data = payload.get("data")
     if not isinstance(data, dict) or not data.get("order_id"):
