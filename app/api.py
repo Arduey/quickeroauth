@@ -244,9 +244,15 @@ async def redeem(payload: RedeemIn, session: AsyncSession = Depends(get_session)
             {"order_type": order_type, "expected_prefix": prefix},
         )
 
-    months, is_permanent = parse_sku(str(order.get("sku") or ""))
+    raw_sku = str(order.get("sku") or "")
+    months, is_permanent = parse_sku(raw_sku)
     if months is None:
-        return envelope("PRODUCT_MISMATCH", "输入的订单非{}系列订单".format(prefix))
+        # 归属是对的，卡在规格上：把原样值带出来，否则没法判断该怎么解析
+        return envelope(
+            "PRODUCT_MISMATCH",
+            "输入的订单非{}系列订单".format(prefix),
+            {"order_type": order_type, "sku": raw_sku, "reason": "sku_unrecognized"},
+        )
 
     now = timeutil.now()
 
