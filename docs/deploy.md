@@ -140,6 +140,30 @@ Let's Encrypt 证书 90 天有效，宝塔会自动续签并自动重载，你�
 
 ---
 
+## 首次启动排查
+
+这套代码在写的时候没有 Python 环境可以运行，下面的问题按可能性排序，都是**还没被实际验证过**的地方。
+
+**进程起不来，日志里有 `ImportError` / `ModuleNotFoundError`**
+依赖没装全。宝塔「Python 项目」里的「安装依赖」是异步执行的，在它跑完之前启动会失败——等它装完，再点一次「重启」。
+
+**`/admin` 打开报 500**
+大概率是 `sqladmin` 的版本和 SQLAlchemy 2.0 不搭。把 `requirements.txt` 里的 `sqladmin>=0.16` 提到更高（比如 `>=0.19`），重新安装依赖再重启。
+
+**连数据库报 `cryptography package is required`**
+MySQL 8 默认用 `caching_sha2_password` 认证，PyMySQL 走这套认证需要 `cryptography`。它已经在 `requirements.txt` 里了，如果报这个错说明依赖没装全，重装一次。
+
+**安装向导最后一步失败，提示目录不可写**
+项目目录的所有者不是 `www`。在宝塔「文件」里右键项目目录 → 权限 → 把所有者和用户组都改成 `www`，勾上"应用到子目录"。
+
+**打开页面报模板相关错误**
+Starlette 版本太老，不认 `TemplateResponse` 的新调用方式。升级：`starlette>=0.36`。
+
+**域名打不开但 `127.0.0.1:8000` 是通的**
+宝塔「域名管理」生成的 Nginx 配置缺 `location /` 代理段，手动补上——见本文档第 5 步。
+
+---
+
 ## 常见问题
 
 **打开域名是 502**
