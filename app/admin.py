@@ -1,235 +1,774 @@
 """管理后台。
 
-用 sqladmin：注册模型就有增删改查、搜索、排序、导出。
-登录用 sqladmin 自带的 AuthenticationBackend（内部基于 Starlette 的
-SessionMiddleware，Cookie 是 HttpOnly + SameSite=Lax）。
-登录失败限流做在本进程内存里，不依赖 Nginx。
+自己写的，不依赖任何第三方 admin 库。登录用签名 cookie（itsdangerous），
+密钥取 config.json 里的 secret_key；页面服务端渲染，不引任何前端框架和 CDN。
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from pathlib import Path
+from typing import Any, AsyncIterator, Optional
 
-from sqladmin import Admin, ModelView
-from sqladmin.authentication import AuthenticationBackend
-from sqladmin.i18n import I18nConfig
-from sqlalchemy import select
-from starlette.middleware import Middleware
-from starlette.middleware.sessions import SessionMiddleware
-from starlette.requests import Request
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import config, db, i18n as i18n_module, security, timeutil
+from . import config, db, security, timeutil
+from . import settings as site_settings
 from .models import AdminUser, LicenseOrder, LicenseUser, Setting
+
+router = APIRouter()
+templates = Jinja2Templates(
+    directory=str(Path(__file__).resolve().parent / "templates")
+)
+
+ADMIN_BASE = config.admin_path()
+COOKIE_NAME = "admin_session"
+PAGE_SIZE = 50
+SETTING_KEYS = ("site_domain", "trial_days", "platform_base_url", "platform_email")
+
+
+# ---------------------------------------------------------------- 会话
+
+
+def _serializer() -> URLSafeTimedSerializer:
+    secret = str((config.get() or {}).get("secret_key") or "not-installed")
+    return URLSafeTimedSerializer(secret, salt="quickeroauth-admin")
+
+
+def _session_max_age() -> int:
+    return max(600, config.session_hours() * 3600)
+
+
+def current_admin(request: Request) -> Optional[str]:
+    raw = request.cookies.get(COOKIE_NAME)
+    if not raw:
+        return None
+    try:
+        data = _serializer().loads(raw, max_age=_session_max_age())
+    except (BadSignature, SignatureExpired):
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+    if isinstance(data, dict):
+        name = data.get("username")
+        if name:
+            return str(name)
+    return None
+
+
+def set_session(response: RedirectResponse, username: str) -> None:
+    token = _serializer().dumps({"username": username})
+    response.set_cookie(
+        COOKIE_NAME,
+        token,
+        max_age=_session_max_age(),
+        httponly=True,
+        samesite="lax",
+        secure=True,
+        path="/",
+    )
+
+
+def clear_session(response: RedirectResponse) -> None:
+    try:
+        response.delete_cookie(COOKIE_NAME, path="/")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def guard(request: Request) -> Optional[RedirectResponse]:
+    if current_admin(request) is None:
+        return RedirectResponse(url=ADMIN_BASE + "/login", status_code=303)
+    return None
 
 
 def client_ip(request: Request) -> str:
-    """取真实来源 IP。
-
-    前面可能套了两层：Cloudflare + Nginx。Cloudflare 会把真实访客地址放在
-    CF-Connecting-IP 里，优先用它；否则退回到 X-Forwarded-For 的第一段。
-    如果取错了（比如取到 Cloudflare 自己的地址），登录限流会把所有访客算成
-    同一个人，一个人试错就把大家全锁上。
-    """
+    """真实来源 IP。前面可能套了 Cloudflare + Nginx。"""
     cf = request.headers.get("cf-connecting-ip")
     if cf and cf.strip():
         return cf.strip()
-
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         first = forwarded.split(",")[0].strip()
         if first:
             return first
-
     return request.client.host if request.client else "unknown"
 
 
-class AdminAuth(AuthenticationBackend):
-    def __init__(self, secret_key: str, max_age: Optional[int] = None) -> None:
-        super().__init__(secret_key=secret_key)
-        # 自己装会话中间件，不用 sqladmin 转发的 kwargs。
-        # 各版本这里行为不一致：有的认 session_max_age，有的把它原样丢给
-        # Starlette 的 SessionMiddleware，而后者只认 max_age，于是启动后在
-        # 构建中间件时直接崩。与其猜参数名，不如以 Starlette 的口径装。
-        self.middlewares = [
-            Middleware(SessionMiddleware, secret_key=secret_key, max_age=max_age)
-        ]
-
-    async def login(self, request: Request) -> bool:
-        ip = client_ip(request)
-
-        if security.is_locked(ip):
-            return False
-
-        form = await request.form()
-        username = str(form.get("username") or "").strip()
-        password = str(form.get("password") or "")
-
-        if not username or not password:
-            security.record_failure(ip)
-            return False
-
-        factory = db.session_factory()
-        async with factory() as session:
-            found = (
-                await session.execute(
-                    select(AdminUser).where(AdminUser.username == username)
-                )
-            ).scalar_one_or_none()
-
-            if found is None or not security.verify_password(
-                password, found.password_hash
-            ):
-                security.record_failure(ip)
-                return False
-
-            found.last_login = timeutil.now()
-            await session.commit()
-
-        security.clear_failures(ip)
-        request.session.update({"admin_user": username})
-        return True
-
-    async def logout(self, request: Request) -> bool:
-        request.session.clear()
-        return True
-
-    async def authenticate(self, request: Request) -> bool:
-        session = getattr(request, "session", None) or {}
-        return bool(session.get("admin_user"))
+# ---------------------------------------------------------------- 基础
 
 
-# ---------------------------------------------------------------- 视图
+async def db_session() -> AsyncIterator[AsyncSession]:
+    factory = db.session_factory()
+    async with factory() as session:
+        yield session
 
 
-class LicenseUserAdmin(ModelView, model=LicenseUser):
-    name = "账户"
-    name_plural = "授权账户"
-    icon = "fa-solid fa-user"
-    column_list = [
-        LicenseUser.typekey,
-        LicenseUser.user,
-        LicenseUser.email,
-        LicenseUser.exptime,
-        LicenseUser.last_time,
-        LicenseUser.count,
-        LicenseUser.addtime,
-    ]
-    column_labels = {
-        LicenseUser.typekey: "账户标识",
-        LicenseUser.user: "用户名",
-        LicenseUser.email: "邮箱",
-        LicenseUser.exptime: "过期时间",
-        LicenseUser.last_time: "上次使用",
-        LicenseUser.count: "使用次数",
-        LicenseUser.addtime: "创建时间",
+def render(request: Request, template: str, **context: Any) -> HTMLResponse:
+    payload: dict[str, Any] = {
+        "admin_base": ADMIN_BASE,
+        "current": current_admin(request),
+        "ok": request.query_params.get("ok") or "",
+        "error": context.pop("error", "") or request.query_params.get("error") or "",
     }
-    column_searchable_list = [LicenseUser.typekey, LicenseUser.user, LicenseUser.email]
-    column_sortable_list = [
-        LicenseUser.exptime,
-        LicenseUser.last_time,
-        LicenseUser.count,
-        LicenseUser.addtime,
-    ]
-    column_default_sort = (LicenseUser.addtime, True)
-    page_size = 50
-    can_export = True
+    payload.update(context)
+    return templates.TemplateResponse(request, template, payload)
 
 
-class LicenseOrderAdmin(ModelView, model=LicenseOrder):
-    name = "订单"
-    name_plural = "订单核销记录"
-    icon = "fa-solid fa-receipt"
-    column_list = [
-        LicenseOrder.ordernumber,
-        LicenseOrder.typekey,
-        LicenseOrder.name,
-        LicenseOrder.sku,
-        LicenseOrder.money,
-        LicenseOrder.ordertime,
-        LicenseOrder.usetime,
-    ]
-    column_labels = {
-        LicenseOrder.ordernumber: "订单号",
-        LicenseOrder.typekey: "账户标识",
-        LicenseOrder.name: "商品标题",
-        LicenseOrder.sku: "规格",
-        LicenseOrder.money: "金额",
-        LicenseOrder.ordertime: "付款时间",
-        LicenseOrder.usetime: "核销时间",
-    }
-    column_searchable_list = [
-        LicenseOrder.ordernumber,
-        LicenseOrder.typekey,
-        LicenseOrder.name,
-    ]
-    column_sortable_list = [LicenseOrder.ordertime, LicenseOrder.usetime]
-    column_default_sort = (LicenseOrder.usetime, True)
-    page_size = 50
-    can_export = True
+def redirect(path: str, ok: str = "", error: str = "") -> RedirectResponse:
+    url = ADMIN_BASE + path
+    query = []
+    if ok:
+        query.append("ok=" + _q(ok))
+    if error:
+        query.append("error=" + _q(error))
+    if query:
+        url += ("&" if "?" in url else "?") + "&".join(query)
+    return RedirectResponse(url=url, status_code=303)
 
 
-class AdminUserAdmin(ModelView, model=AdminUser):
-    name = "管理员"
-    name_plural = "管理员账号"
-    icon = "fa-solid fa-user-shield"
-    column_list = [
-        AdminUser.id,
-        AdminUser.username,
-        AdminUser.created_at,
-        AdminUser.last_login,
-    ]
-    column_labels = {
-        AdminUser.id: "ID",
-        AdminUser.username: "登录名",
-        AdminUser.password_hash: "密码",
-        AdminUser.created_at: "创建时间",
-        AdminUser.last_login: "上次登录",
-    }
-    column_searchable_list = [AdminUser.username]
-    can_export = False
+def _q(value: str) -> str:
+    from urllib.parse import quote_plus
+
+    return quote_plus(value)
 
 
-class SettingAdmin(ModelView, model=Setting):
-    name = "设置项"
-    name_plural = "站点设置"
-    icon = "fa-solid fa-gear"
-    column_list = [
-        Setting.skey,
-        Setting.svalue,
-        Setting.remark,
-        Setting.updatetime,
-    ]
-    column_labels = {
-        Setting.skey: "配置项",
-        Setting.svalue: "配置值",
-        Setting.remark: "说明",
-        Setting.updatetime: "更新时间",
-    }
-    column_searchable_list = [Setting.skey]
-    # 设置项由安装向导写入，这里只允许改值，不允许增删
-    can_create = False
-    can_delete = False
-    can_export = False
+def account_state(row: LicenseUser, now=None) -> str:
+    if (row.status or "active") != "active":
+        return "disabled"
+    moment = now or timeutil.now()
+    return "active" if row.exptime and row.exptime > moment else "expired"
 
 
-def build_admin(app, engine) -> Admin:
-    secret_key = str((config.get() or {}).get("secret_key") or "")
-    backend = AdminAuth(secret_key=secret_key, max_age=config.session_hours() * 3600)
+# ---------------------------------------------------------------- 登录
 
-    options: dict = {}
-    if i18n_module.install():
-        options["i18n_config"] = I18nConfig(default_locale=i18n_module.LOCALE_CODE)
 
-    admin = Admin(
-        app=app,
-        engine=engine,
-        authentication_backend=backend,
-        base_url=config.admin_path(),
-        title="授权管理后台",
-        **options,
+@router.get(ADMIN_BASE + "/login")
+async def login_page(request: Request):
+    if current_admin(request) is not None:
+        return redirect("/")
+    return render(request, "admin/login.html")
+
+
+@router.post(ADMIN_BASE + "/login")
+async def login_submit(
+    request: Request,
+    username: str = Form(""),
+    password: str = Form(""),
+    session: AsyncSession = Depends(db_session),
+):
+    ip = client_ip(request)
+
+    if security.is_locked(ip):
+        return render(
+            request, "admin/login.html", error="登录失败次数过多，请过一会儿再试"
+        )
+
+    name = (username or "").strip()
+    if not name or not password:
+        security.record_failure(ip)
+        return render(request, "admin/login.html", error="用户名和密码都要填")
+
+    found = (
+        await session.execute(select(AdminUser).where(AdminUser.username == name))
+    ).scalar_one_or_none()
+
+    if found is None or not security.verify_password(password, found.password_hash):
+        security.record_failure(ip)
+        return render(request, "admin/login.html", error="用户名或密码不对")
+
+    security.clear_failures(ip)
+    found.last_login = timeutil.now()
+    await session.commit()
+
+    response = redirect("/")
+    set_session(response, name)
+    return response
+
+
+@router.get(ADMIN_BASE + "/logout")
+async def logout():
+    response = redirect("/login")
+    clear_session(response)
+    return response
+
+
+# ---------------------------------------------------------------- 概览
+
+
+@router.get(ADMIN_BASE)
+@router.get(ADMIN_BASE + "/")
+async def dashboard(request: Request, session: AsyncSession = Depends(db_session)):
+    if (response := guard(request)) is not None:
+        return response
+
+    now = timeutil.now()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_ago = timeutil.add_days(now, -7)
+
+    total = await session.scalar(select(func.count()).select_from(LicenseUser))
+    alive = await session.scalar(
+        select(func.count())
+        .select_from(LicenseUser)
+        .where(LicenseUser.exptime > now, LicenseUser.status == "active")
     )
-    admin.add_view(LicenseUserAdmin)
-    admin.add_view(LicenseOrderAdmin)
-    admin.add_view(AdminUserAdmin)
-    admin.add_view(SettingAdmin)
-    return admin
+    disabled = await session.scalar(
+        select(func.count())
+        .select_from(LicenseUser)
+        .where(LicenseUser.status != "active")
+    )
+    new_today = await session.scalar(
+        select(func.count())
+        .select_from(LicenseUser)
+        .where(LicenseUser.addtime >= today)
+    )
+    active_week = await session.scalar(
+        select(func.count())
+        .select_from(LicenseUser)
+        .where(LicenseUser.last_time >= week_ago)
+    )
+    orders_today = await session.scalar(
+        select(func.count())
+        .select_from(LicenseOrder)
+        .where(LicenseOrder.usetime >= today)
+    )
+
+    recent_orders = (
+        (
+            await session.execute(
+                select(LicenseOrder)
+                .order_by(LicenseOrder.usetime.desc())
+                .limit(10)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    expiring = (
+        (
+            await session.execute(
+                select(LicenseUser)
+                .where(LicenseUser.exptime > now)
+                .order_by(LicenseUser.exptime.asc())
+                .limit(10)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return render(
+        request,
+        "admin/dashboard.html",
+        stats={
+            "total": total or 0,
+            "alive": alive or 0,
+            "disabled": disabled or 0,
+            "new_today": new_today or 0,
+            "active_week": active_week or 0,
+            "orders_today": orders_today or 0,
+        },
+        recent_orders=recent_orders,
+        expiring=expiring,
+        now=now,
+        account_state=account_state,
+    )
+
+
+# ---------------------------------------------------------------- 账户
+
+
+def _account_filters(q: str, state: str, now):
+    conditions = []
+    keyword = (q or "").strip()
+    if keyword:
+        like = "%" + keyword + "%"
+        conditions.append(
+            or_(
+                LicenseUser.typekey.like(like),
+                LicenseUser.user.like(like),
+                LicenseUser.email.like(like),
+            )
+        )
+    if state == "active":
+        conditions.extend([LicenseUser.status == "active", LicenseUser.exptime > now])
+    elif state == "expired":
+        conditions.extend([LicenseUser.status == "active", LicenseUser.exptime <= now])
+    elif state == "disabled":
+        conditions.append(LicenseUser.status != "active")
+    return conditions
+
+
+@router.get(ADMIN_BASE + "/accounts")
+async def accounts(
+    request: Request,
+    q: str = "",
+    state: str = "",
+    page: int = 1,
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    now = timeutil.now()
+    conditions = _account_filters(q, state, now)
+
+    count_query = select(func.count()).select_from(LicenseUser)
+    list_query = select(LicenseUser).order_by(LicenseUser.addtime.desc())
+    for condition in conditions:
+        count_query = count_query.where(condition)
+        list_query = list_query.where(condition)
+
+    total = await session.scalar(count_query) or 0
+    page = max(1, page)
+    rows = (
+        (
+            await session.execute(
+                list_query.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    pages = max(1, (int(total) + PAGE_SIZE - 1) // PAGE_SIZE)
+
+    return render(
+        request,
+        "admin/accounts.html",
+        rows=rows,
+        total=int(total),
+        page=page,
+        pages=pages,
+        q=q,
+        state=state,
+        now=now,
+        account_state=account_state,
+    )
+
+
+@router.get(ADMIN_BASE + "/accounts/new")
+async def account_new_page(request: Request):
+    if (response := guard(request)) is not None:
+        return response
+    return render(request, "admin/account_new.html", days=1)
+
+
+@router.post(ADMIN_BASE + "/accounts/new")
+async def account_new_submit(
+    request: Request,
+    typekey: str = Form(""),
+    user: str = Form(""),
+    email: str = Form(""),
+    days: int = Form(1),
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    key = (typekey or "").strip()
+    if not key or len(key) > 64:
+        return render(request, "admin/account_new.html", error="账户标识不能为空且不超过 64 个字符", days=days)
+
+    if await session.get(LicenseUser, key) is not None:
+        return render(request, "admin/account_new.html", error="这个账户标识已经存在了", days=days)
+
+    now = timeutil.now()
+    session.add(
+        LicenseUser(
+            typekey=key,
+            addtime=now,
+            exptime=timeutil.add_days(now, max(1, days)),
+            status="active",
+            user=(user or "").strip() or None,
+            email=(email or "").strip() or None,
+            count=0,
+        )
+    )
+    await session.commit()
+    return redirect("/accounts/" + _q(key), ok="账户已创建")
+
+
+@router.get(ADMIN_BASE + "/accounts/{typekey}")
+async def account_detail(
+    request: Request, typekey: str, session: AsyncSession = Depends(db_session)
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    row = await session.get(LicenseUser, typekey)
+    if row is None:
+        return redirect("/accounts", error="账户不存在：" + typekey)
+
+    orders = (
+        (
+            await session.execute(
+                select(LicenseOrder)
+                .where(LicenseOrder.typekey == typekey)
+                .order_by(LicenseOrder.usetime.desc())
+                .limit(50)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return render(
+        request,
+        "admin/account_detail.html",
+        row=row,
+        orders=orders,
+        now=timeutil.now(),
+        state=account_state(row),
+        exptime_text=timeutil.fmt(row.exptime) or "",
+        addtime_text=timeutil.fmt(row.addtime) or "",
+        last_time_text=timeutil.fmt(row.last_time) or "",
+    )
+
+
+@router.post(ADMIN_BASE + "/accounts/{typekey}")
+async def account_save(
+    request: Request,
+    typekey: str,
+    user: str = Form(""),
+    email: str = Form(""),
+    exptime: str = Form(""),
+    count: str = Form(""),
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    row = await session.get(LicenseUser, typekey)
+    if row is None:
+        return redirect("/accounts", error="账户不存在：" + typekey)
+
+    parsed = timeutil.parse(exptime)
+    if parsed is None:
+        return redirect("/accounts/" + _q(typekey), error="过期时间格式不对，应该像 2026-03-01 12:00:00")
+
+    row.user = (user or "").strip() or None
+    row.email = (email or "").strip() or None
+    row.exptime = parsed
+    try:
+        row.count = int(count) if str(count).strip() != "" else row.count
+    except ValueError:
+        pass
+
+    await session.commit()
+    return redirect("/accounts/" + _q(typekey), ok="已保存")
+
+
+@router.post(ADMIN_BASE + "/accounts/{typekey}/grant")
+async def account_grant(
+    request: Request,
+    typekey: str,
+    months: int = Form(0),
+    days: int = Form(0),
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    row = await session.get(LicenseUser, typekey)
+    if row is None:
+        return redirect("/accounts", error="账户不存在：" + typekey)
+
+    if months == 0 and days == 0:
+        return redirect("/accounts/" + _q(typekey), error="加多少要填一个数")
+
+    now = timeutil.now()
+    # 未过期就从原到期日往后加，已过期就从现在起算
+    base = timeutil.later_of(row.exptime, now)
+    if months:
+        base = timeutil.add_months(base, months)
+    if days:
+        base = timeutil.add_days(base, days)
+    row.exptime = base
+    row.status = "active"
+
+    await session.commit()
+    return redirect(
+        "/accounts/" + _q(typekey),
+        ok="已加时，新的到期时间 " + (timeutil.fmt(base) or ""),
+    )
+
+
+@router.post(ADMIN_BASE + "/accounts/{typekey}/status")
+async def account_status(
+    request: Request,
+    typekey: str,
+    status: str = Form("active"),
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    row = await session.get(LicenseUser, typekey)
+    if row is None:
+        return redirect("/accounts", error="账户不存在：" + typekey)
+
+    row.status = "disabled" if status == "disabled" else "active"
+    await session.commit()
+    return redirect(
+        "/accounts/" + _q(typekey),
+        ok="已封禁" if row.status == "disabled" else "已解封",
+    )
+
+
+@router.post(ADMIN_BASE + "/accounts/{typekey}/delete")
+async def account_delete(
+    request: Request, typekey: str, session: AsyncSession = Depends(db_session)
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    row = await session.get(LicenseUser, typekey)
+    if row is None:
+        return redirect("/accounts", error="账户不存在：" + typekey)
+
+    await session.execute(delete(LicenseUser).where(LicenseUser.typekey == typekey))
+    await session.commit()
+    return redirect("/accounts", ok="账户已删除：" + typekey)
+
+
+# ---------------------------------------------------------------- 订单
+
+
+@router.get(ADMIN_BASE + "/orders")
+async def orders(
+    request: Request,
+    q: str = "",
+    page: int = 1,
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    count_query = select(func.count()).select_from(LicenseOrder)
+    list_query = select(LicenseOrder).order_by(LicenseOrder.usetime.desc())
+
+    keyword = (q or "").strip()
+    if keyword:
+        like = "%" + keyword + "%"
+        condition = or_(
+            LicenseOrder.ordernumber.like(like),
+            LicenseOrder.typekey.like(like),
+            LicenseOrder.name.like(like),
+        )
+        count_query = count_query.where(condition)
+        list_query = list_query.where(condition)
+
+    total = await session.scalar(count_query) or 0
+    page = max(1, page)
+    rows = (
+        (
+            await session.execute(
+                list_query.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    pages = max(1, (int(total) + PAGE_SIZE - 1) // PAGE_SIZE)
+
+    return render(
+        request,
+        "admin/orders.html",
+        rows=rows,
+        total=int(total),
+        page=page,
+        pages=pages,
+        q=q,
+        usetime_text=lambda value: timeutil.fmt(value) or "",
+        ordertime_text=lambda value: timeutil.fmt(value) or "",
+    )
+
+
+@router.post(ADMIN_BASE + "/orders/{ordernumber}/delete")
+async def order_delete(
+    request: Request, ordernumber: str, session: AsyncSession = Depends(db_session)
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    row = await session.get(LicenseOrder, ordernumber)
+    if row is None:
+        return redirect("/orders", error="订单不存在：" + ordernumber)
+
+    await session.execute(
+        delete(LicenseOrder).where(LicenseOrder.ordernumber == ordernumber)
+    )
+    await session.commit()
+    return redirect("/orders", ok="订单记录已删除：" + ordernumber)
+
+
+# ---------------------------------------------------------------- 设置
+
+
+@router.get(ADMIN_BASE + "/settings")
+async def settings_page(request: Request, session: AsyncSession = Depends(db_session)):
+    if (response := guard(request)) is not None:
+        return response
+
+    rows = (
+        (await session.execute(select(Setting).order_by(Setting.skey.asc())))
+        .scalars()
+        .all()
+    )
+    values = {row.skey: (row.svalue or "") for row in rows}
+    removed = [row for row in rows if row.skey not in SETTING_KEYS]
+
+    return render(request, "admin/settings.html", values=values, removed=removed)
+
+
+@router.post(ADMIN_BASE + "/settings")
+async def settings_save(
+    request: Request,
+    site_domain: str = Form(""),
+    trial_days: str = Form("1"),
+    platform_base_url: str = Form(""),
+    platform_email: str = Form(""),
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    try:
+        trial_value = int(trial_days or "1")
+    except ValueError:
+        return redirect("/settings", error="试用天数必须是数字")
+    if trial_value < 1:
+        return redirect("/settings", error="试用天数至少为 1")
+
+    domain = (site_domain or "").strip()
+    for prefix in ("https://", "http://"):
+        if domain.lower().startswith(prefix):
+            domain = domain[len(prefix):]
+    domain = domain.strip().strip("/")
+
+    url = (platform_base_url or "").strip()
+    if url and not url.startswith(("http://", "https://")):
+        return redirect("/settings", error="平台地址要以 http:// 或 https:// 开头")
+
+    values = {
+        "site_domain": domain,
+        "trial_days": str(trial_value),
+        "platform_base_url": url,
+        "platform_email": (platform_email or "").strip(),
+    }
+    await site_settings.set_many(session, values)
+    await session.commit()
+    return redirect("/settings", ok="设置已保存")
+
+
+# ---------------------------------------------------------------- 管理员
+
+
+@router.get(ADMIN_BASE + "/admins")
+async def admins_page(request: Request, session: AsyncSession = Depends(db_session)):
+    if (response := guard(request)) is not None:
+        return response
+
+    rows = (
+        (await session.execute(select(AdminUser).order_by(AdminUser.id.asc())))
+        .scalars()
+        .all()
+    )
+    return render(
+        request,
+        "admin/admins.html",
+        rows=rows,
+        last_login=lambda value: timeutil.fmt(value) or "从未登录",
+        created=lambda value: timeutil.fmt(value) or "",
+    )
+
+
+@router.post(ADMIN_BASE + "/admins/new")
+async def admins_new(
+    request: Request,
+    username: str = Form(""),
+    password: str = Form(""),
+    password2: str = Form(""),
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    name = (username or "").strip()
+    if len(name) < 3:
+        return redirect("/admins", error="登录名至少 3 个字符")
+    if len(password or "") < 8:
+        return redirect("/admins", error="密码至少 8 个字符")
+    if password != password2:
+        return redirect("/admins", error="两次输入的密码不一致")
+
+    exists = (
+        await session.execute(select(AdminUser).where(AdminUser.username == name))
+    ).scalar_one_or_none()
+    if exists is not None:
+        return redirect("/admins", error="这个登录名已经被占用了")
+
+    session.add(
+        AdminUser(
+            username=name,
+            password_hash=security.hash_password(password),
+            created_at=timeutil.now(),
+        )
+    )
+    await session.commit()
+    return redirect("/admins", ok="管理员已添加：" + name)
+
+
+@router.post(ADMIN_BASE + "/admins/password")
+async def admins_password(
+    request: Request,
+    username: str = Form(""),
+    password: str = Form(""),
+    password2: str = Form(""),
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    if len(password or "") < 8:
+        return redirect("/admins", error="密码至少 8 个字符")
+    if password != password2:
+        return redirect("/admins", error="两次输入的密码不一致")
+
+    row = (
+        await session.execute(select(AdminUser).where(AdminUser.username == username))
+    ).scalar_one_or_none()
+    if row is None:
+        return redirect("/admins", error="没有这个管理员：" + username)
+
+    row.password_hash = security.hash_password(password)
+    await session.commit()
+    return redirect("/admins", ok="密码已修改：" + username)
+
+
+@router.post(ADMIN_BASE + "/admins/delete")
+async def admins_delete(
+    request: Request, username: str = Form(""), session: AsyncSession = Depends(db_session)
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    me = current_admin(request)
+    if me and username == me:
+        return redirect("/admins", error="不能删掉自己正在用的账号")
+
+    exists = (
+        await session.execute(select(AdminUser).where(AdminUser.username == username))
+    ).scalar_one_or_none()
+    if exists is None:
+        return redirect("/admins", error="没有这个管理员：" + username)
+
+    await session.execute(delete(AdminUser).where(AdminUser.username == username))
+    await session.commit()
+    return redirect("/admins", ok="管理员已删除：" + username)

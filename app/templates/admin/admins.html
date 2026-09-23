@@ -1,0 +1,54 @@
+{% extends "admin/base.html" %}
+{% block title %}管理员{% endblock %}
+{% block content %}
+<h1>管理员</h1>
+
+<div class="table-scroll">
+<table>
+  <thead><tr><th>ID</th><th>登录名</th><th>创建时间</th><th>上次登录</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td>{{ row.id }}</td>
+      <td>{{ row.username }}{% if row.username == current %} <span class="muted">(当前登录)</span>{% endif %}</td>
+      <td class="muted">{{ created(row.created_at) }}</td>
+      <td class="muted">{{ last_login(row.last_login) }}</td>
+      <td>
+        {% if row.username != current %}
+        <form method="post" action="{{ admin_base }}/admins/delete"
+              onsubmit="return confirm('确定删除管理员 {{ row.username }}？');">
+          <input type="hidden" name="username" value="{{ row.username }}">
+          <button type="submit" class="plain small">删除</button>
+        </form>
+        {% else %}
+        <span class="muted">—</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="grid2" style="margin-top:22px">
+  <div class="card">
+    <h2 style="margin-top:0">添加管理员</h2>
+    <form method="post" action="{{ admin_base }}/admins/new">
+      <label>登录名<input type="text" name="username" autocomplete="off"></label>
+      <label>密码（至少 8 位）<input type="password" name="password" autocomplete="new-password"></label>
+      <label>再输一次<input type="password" name="password2" autocomplete="new-password"></label>
+      <button type="submit">添加</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">修改密码</h2>
+    <form method="post" action="{{ admin_base }}/admins/password">
+      <label>登录名<input type="text" name="username" autocomplete="off"></label>
+      <label>新密码（至少 8 位）<input type="password" name="password" autocomplete="new-password"></label>
+      <label>再输一次<input type="password" name="password2" autocomplete="new-password"></label>
+      <button type="submit">修改密码</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

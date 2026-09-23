@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -55,6 +55,39 @@ async def dispose() -> None:
         await engine.dispose()
     engine = None
     SessionLocal = None
+
+
+# 后加的列。新装的库由 schema.sql 直接建好，已经跑着的库靠这里补上，
+# 免得每次加一个字段都要人工去改表。
+SCHEMA_PATCHES: list[tuple[str, str, str]] = [
+    (
+        "license_user",
+        "status",
+        "ALTER TABLE `license_user` ADD COLUMN `status` VARCHAR(16) "
+        "DEFAULT 'active' COMMENT '账户状态：active / disabled' AFTER `exptime`",
+    ),
+]
+
+
+async def ensure_schema() -> list[str]:
+    """补上缺失的列，返回实际执行过的语句（空列表表示表结构已是最新）。"""
+    applied: list[str] = []
+    if SessionLocal is None:
+        return applied
+
+    async with SessionLocal() as session:
+        for table, column, ddl in SCHEMA_PATCHES:
+            exists = (
+                await session.execute(
+                    text("SHOW COLUMNS FROM `%s` LIKE '%s'" % (table, column))
+                )
+            ).first()
+            if exists is None:
+                await session.execute(text(ddl))
+                await session.commit()
+                applied.append(ddl)
+
+    return applied
 
 
 def is_ready() -> bool:

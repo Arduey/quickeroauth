@@ -1,0 +1,57 @@
+{% extends "admin/base.html" %}
+{% block title %}概览{% endblock %}
+{% block content %}
+<h1>概览</h1>
+
+<div class="stats">
+  <div class="stat"><span class="num">{{ stats.total }}</span><span class="lbl">账户总数</span></div>
+  <div class="stat"><span class="num">{{ stats.alive }}</span><span class="lbl">当前有效</span></div>
+  <div class="stat"><span class="num">{{ stats.disabled }}</span><span class="lbl">已封禁</span></div>
+  <div class="stat"><span class="num">{{ stats.new_today }}</span><span class="lbl">今日新增</span></div>
+  <div class="stat"><span class="num">{{ stats.active_week }}</span><span class="lbl">近 7 天有使用</span></div>
+  <div class="stat"><span class="num">{{ stats.orders_today }}</span><span class="lbl">今日核销</span></div>
+</div>
+
+<h2>即将到期（最近 10 个）</h2>
+{% if expiring %}
+<div class="table-scroll">
+<table>
+  <thead><tr><th>账户标识</th><th>用户名</th><th>过期时间</th><th>剩余</th></tr></thead>
+  <tbody>
+  {% for row in expiring %}
+    <tr>
+      <td><a href="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}">{{ row.typekey }}</a></td>
+      <td>{{ row.user or "—" }}</td>
+      <td>{{ row.exptime }}</td>
+      <td class="muted">{{ (row.exptime - now).days }} 天</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">还没有有效账户。</p>
+{% endif %}
+
+<h2>最近核销</h2>
+{% if recent_orders %}
+<div class="table-scroll">
+<table>
+  <thead><tr><th>订单号</th><th>账户标识</th><th>规格</th><th>金额</th><th>核销时间</th></tr></thead>
+  <tbody>
+  {% for row in recent_orders %}
+    <tr>
+      <td>{{ row.ordernumber }}</td>
+      <td><a href="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}">{{ row.typekey }}</a></td>
+      <td>{{ row.sku or "—" }}</td>
+      <td>{{ row.money or "—" }}</td>
+      <td class="muted">{{ row.usetime }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">还没有核销记录。</p>
+{% endif %}
+{% endblock %}

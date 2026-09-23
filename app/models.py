@@ -23,6 +23,9 @@ class LicenseUser(Base):
         DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP")
     )
     exptime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[Optional[str]] = mapped_column(
+        String(16), server_default=text("'active'")
+    )
     last_time: Mapped[Optional[datetime]] = mapped_column(DateTime)
     user: Mapped[Optional[str]] = mapped_column(String(64))
     email: Mapped[Optional[str]] = mapped_column(String(128))

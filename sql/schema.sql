@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `license_user` (
   `typekey`   VARCHAR(64)  NOT NULL                       COMMENT '账户唯一标识，客户端持有',
   `addtime`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `exptime`   DATETIME     NOT NULL                       COMMENT '过期时间',
+  `status`    VARCHAR(16)  DEFAULT 'active'               COMMENT '账户状态：active / disabled',
   `last_time` DATETIME                                    COMMENT '上次使用时间',
   `user`      VARCHAR(64)                                 COMMENT '用户名',
   `email`     VARCHAR(128)                                COMMENT '用户邮箱',

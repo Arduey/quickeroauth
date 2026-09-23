@@ -18,12 +18,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from app import api, config, db
-from app import i18n as i18n_module
 from app import install as install_module
 from app import settings as site_settings
-
-# 必须在构造管理后台之前执行：把中文词条塞进 sqladmin
-i18n_module.install()
 
 # ---------------------------------------------------------------- 反代修正
 
@@ -76,6 +72,12 @@ async def load_site_domain() -> str:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # 补上后加的列，这样已经跑着的库也能跟着升级，不用人工改表
+    if db.is_ready():
+        try:
+            await db.ensure_schema()
+        except Exception:  # noqa: BLE001
+            pass
     yield
     await db.dispose()
 
@@ -154,14 +156,13 @@ async def reverse_proxy_fix(request: Request, call_next):
     return response
 
 
-# 已安装才挂管理后台——未安装时不需要 sqladmin，也就不导入它，
-# 这样万一 sqladmin 没装上，安装向导本身还是打得开的。
+# 已安装才挂管理后台和数据库
 _cfg = config.load()
 if _cfg:
     from app import admin as admin_module  # noqa: E402
 
     db.init(config.database_url(_cfg))
-    admin_module.build_admin(app, db.engine)
+    app.include_router(admin_module.router)
 
 
 if __name__ == "__main__":

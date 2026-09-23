@@ -133,6 +133,7 @@ async def trial(payload: TrialIn, session: AsyncSession = Depends(get_session)):
         typekey=typekey,
         addtime=now,
         exptime=timeutil.add_days(now, trial_days),
+        status="active",
         user=clean_optional(payload.user),
         email=clean_optional(payload.email),
         count=0,
@@ -163,6 +164,10 @@ async def verify(payload: VerifyIn, session: AsyncSession = Depends(get_session)
     if row is None:
         # 不存在的账户不写库
         return envelope("NOT_FOUND", "不存在")
+
+    if (row.status or "active") != "active":
+        # 被封禁的账户即使时间没到也必须拒绝
+        return envelope("DISABLED", "账户已被禁用")
 
     now = timeutil.now()
     active = row.exptime > now

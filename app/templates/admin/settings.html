@@ -1,0 +1,41 @@
+{% extends "admin/base.html" %}
+{% block title %}站点设置{% endblock %}
+{% block content %}
+<h1>站点设置</h1>
+<p class="muted">改完立即生效，不用重启。</p>
+
+<div class="card" style="max-width:640px">
+  <form method="post" action="{{ admin_base }}/settings">
+    <label>站点域名（只填域名，不要带 <code>http://</code>）
+      <input type="text" name="site_domain" value="{{ values.get('site_domain', '') }}"
+             placeholder="pay.arduey.top">
+    </label>
+    <label>新账户试用天数
+      <input type="number" name="trial_days" min="1" value="{{ values.get('trial_days', '1') }}">
+    </label>
+    <label>发卡平台地址
+      <input type="text" name="platform_base_url" value="{{ values.get('platform_base_url', '') }}"
+             placeholder="https://test.arduey.top">
+    </label>
+    <label>商户邮箱（核销查单用）
+      <input type="text" name="platform_email" value="{{ values.get('platform_email', '') }}">
+    </label>
+    <button type="submit">保存设置</button>
+  </form>
+</div>
+
+{% if removed %}
+<h2>其它设置项</h2>
+<p class="muted">下面这些不是程序用到的配置，只做展示。</p>
+<div class="table-scroll">
+<table>
+  <thead><tr><th>配置项</th><th>值</th><th>说明</th></tr></thead>
+  <tbody>
+  {% for row in removed %}
+    <tr><td><code>{{ row.skey }}</code></td><td>{{ row.svalue or "—" }}</td><td class="muted">{{ row.remark or "" }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ row.typekey }}{% endblock %}
+{% block content %}
+<h1>账户详情</h1>
+<p class="muted">
+  账户标识 <code>{{ row.typekey }}</code>
+  · 状态
+  <span class="tag {{ state }}">
+    {% if state == "active" %}有效{% elif state == "expired" %}已过期{% else %}已封禁{% endif %}
+  </span>
+  · 创建于 {{ addtime_text }}
+</p>
+
+<div class="grid2">
+  <div class="card">
+    <h2 style="margin-top:0">基本信息</h2>
+    <form method="post" action="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}">
+      <label>用户名<input type="text" name="user" value="{{ row.user or '' }}"></label>
+      <label>邮箱<input type="text" name="email" value="{{ row.email or '' }}"></label>
+      <label>过期时间（格式 2026-03-01 12:00:00）
+        <input type="text" name="exptime" value="{{ exptime_text }}">
+      </label>
+      <label>使用次数
+        <input type="text" name="count" value="{{ row.count if row.count is not none else '' }}">
+      </label>
+      <button type="submit">保存</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">加时长</h2>
+    <form method="post" action="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/grant">
+      <div class="row">
+        <label>加几个月<input type="number" name="months" value="0"></label>
+        <label>加几天<input type="number" name="days" value="0"></label>
+      </div>
+      <button type="submit">加时</button>
+    </form>
+    <p class="muted" style="margin-bottom:0">
+      未过期就从原到期日往后加，已过期就从现在起算。
+    </p>
+
+    <hr>
+
+    <h2>封禁 / 解封</h2>
+    <form method="post" action="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/status">
+      {% if state == "disabled" %}
+        <input type="hidden" name="status" value="active">
+        <button type="submit">解封这个账户</button>
+      {% else %}
+        <input type="hidden" name="status" value="disabled">
+        <button type="submit" class="danger">封禁这个账户</button>
+      {% endif %}
+    </form>
+    <p class="muted" style="margin-bottom:0">封禁后校验会立刻返回"账户已被禁用"。</p>
+
+    <hr>
+
+    <h2>删除</h2>
+    <form method="post" action="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/delete"
+          onsubmit="return confirm('确定删除这个账户？删了就找不回来了。');">
+      <button type="submit" class="danger">删除账户</button>
+    </form>
+    <p class="muted" style="margin-bottom:0">删账户不会删掉它的核销记录。</p>
+  </div>
+</div>
+
+<h2>核销记录（{{ orders | length }} 条）</h2>
+{% if orders %}
+<div class="table-scroll">
+<table>
+  <thead><tr><th>订单号</th><th>商品标题</th><th>规格</th><th>金额</th><th>付款时间</th><th>核销时间</th></tr></thead>
+  <tbody>
+  {% for o in orders %}
+    <tr>
+      <td>{{ o.ordernumber }}</td>
+      <td>{{ o.name or "—" }}</td>
+      <td>{{ o.sku or "—" }}</td>
+      <td>{{ o.money or "—" }}</td>
+      <td class="muted">{{ o.ordertime or "—" }}</td>
+      <td class="muted">{{ o.usetime or "—" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">这个账户还没有核销记录。</p>
+{% endif %}
+
+<p style="margin-top:20px"><a href="{{ admin_base }}/accounts">← 返回账户列表</a></p>
+{% endblock %}
