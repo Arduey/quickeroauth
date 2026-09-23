@@ -3,20 +3,22 @@
 {% block content %}
 <h1>新建账户</h1>
 
-<div class="card" style="max-width:520px">
+<div class="card" style="max-width:560px">
   <form method="post" action="{{ admin_base }}/accounts/new">
-    <label>账户标识
-      <input type="text" name="typekey" placeholder="例如 Pro-8f3a91c2" autofocus>
-    </label>
-    <label>用户名（可空）
-      <input type="text" name="user">
-    </label>
-    <label>邮箱（可空）
-      <input type="text" name="email">
-    </label>
-    <label>初始有效期（天）
-      <input type="number" name="days" min="1" value="{{ days or 1 }}">
-    </label>
+    <div class="form-grid">
+      <label class="full">账户标识
+        <input type="text" name="typekey" placeholder="例如 Pro-8f3a91c2" autofocus>
+      </label>
+      <label>用户名（可空）
+        <input type="text" name="user">
+      </label>
+      <label>邮箱（可空）
+        <input type="text" name="email">
+      </label>
+      <label>初始有效期（天）
+        <input type="number" name="days" min="1" value="{{ days or 1 }}">
+      </label>
+    </div>
     <button type="submit">创建</button>
     <a class="btn plain" href="{{ admin_base }}/accounts">返回</a>
   </form>

@@ -189,6 +189,15 @@
   .inline { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
   .inline label { margin-bottom: 0; }
 
+  /* 表单栅格：短字段并排两列，长字段用 .full 跨整行。
+     每个字段独占一行还给满宽，在宽屏上太松散。 */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .form-grid > .full { grid-column: 1 / -1; }
+  @media (max-width: 620px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .form-grid > .full { grid-column: auto; }
+  }
+
   /* ---------------------------------------------------------------- 按钮 */
 
   button, .btn {

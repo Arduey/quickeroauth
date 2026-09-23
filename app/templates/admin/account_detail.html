@@ -15,18 +15,20 @@
   <div class="card">
     <h2 style="margin-top:0">基本信息</h2>
     <form method="post" action="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}">
-      <label>用户名<input type="text" name="user" value="{{ row.user or '' }}"></label>
-      <label>邮箱<input type="text" name="email" value="{{ row.email or '' }}"></label>
-      <label>过期时间（格式 2026-03-01 12:00:00）
-        <input type="text"
-               id="ex-{{ row.typekey }}"
-               name="exptime"
-               value="{{ exptime_text }}"
-               autocomplete="off">
-      </label>
-      <label>使用次数
-        <input type="text" name="count" value="{{ row.count if row.count is not none else '' }}">
-      </label>
+      <div class="form-grid">
+        <label>用户名<input type="text" name="user" value="{{ row.user or '' }}"></label>
+        <label>邮箱<input type="text" name="email" value="{{ row.email or '' }}"></label>
+        <label class="full">过期时间（格式 2026-03-01 12:00:00）
+          <input type="text"
+                 id="ex-{{ row.typekey }}"
+                 name="exptime"
+                 value="{{ exptime_text }}"
+                 autocomplete="off">
+        </label>
+        <label>使用次数
+          <input type="text" name="count" value="{{ row.count if row.count is not none else '' }}">
+        </label>
+      </div>
       <button type="submit">保存</button>
     </form>
   </div>

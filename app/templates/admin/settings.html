@@ -6,20 +6,22 @@
 
 <div class="card" style="max-width:640px">
   <form method="post" action="{{ admin_base }}/settings">
-    <label>站点域名（只填域名，不要带 <code>http://</code>）
-      <input type="text" name="site_domain" value="{{ values.get('site_domain', '') }}"
-             placeholder="pay.arduey.top">
-    </label>
-    <label>新账户试用天数
-      <input type="number" name="trial_days" min="1" value="{{ values.get('trial_days', '1') }}">
-    </label>
-    <label>发卡平台地址
-      <input type="text" name="platform_base_url" value="{{ values.get('platform_base_url', '') }}"
-             placeholder="https://test.arduey.top">
-    </label>
-    <label>商户邮箱（核销查单用）
-      <input type="text" name="platform_email" value="{{ values.get('platform_email', '') }}">
-    </label>
+    <div class="form-grid">
+      <label class="full">站点域名（只填域名，不要带 <code>http://</code>）
+        <input type="text" name="site_domain" value="{{ values.get('site_domain', '') }}"
+               placeholder="pay.arduey.top">
+      </label>
+      <label>新账户试用天数
+        <input type="number" name="trial_days" min="1" value="{{ values.get('trial_days', '1') }}">
+      </label>
+      <label class="full">发卡平台地址
+        <input type="text" name="platform_base_url" value="{{ values.get('platform_base_url', '') }}"
+               placeholder="https://test.arduey.top">
+      </label>
+      <label class="full">商户邮箱（核销查单用）
+        <input type="text" name="platform_email" value="{{ values.get('platform_email', '') }}">
+      </label>
+    </div>
     <button type="submit">保存设置</button>
   </form>
 </div>
