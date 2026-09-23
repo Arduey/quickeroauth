@@ -41,8 +41,8 @@ REQUIRED_MODULES = (
     "starlette",
     "sqlalchemy",
     "aiomysql",
-    "sqladmin",
     "bcrypt",
+    "itsdangerous",
     "jinja2",
     "httpx",
 )
