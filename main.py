@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import api, config, db
 from app import install as install_module
+from app import pages as pages_module
 from app import settings as site_settings
 
 STATIC_DIR = Path(__file__).resolve().parent / "app" / "static"
@@ -95,6 +96,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(pages_module.router)
 app.include_router(api.router, prefix="/api")
 app.include_router(install_module.router)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

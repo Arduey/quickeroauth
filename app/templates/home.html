@@ -1,0 +1,37 @@
+{% extends "admin/base.html" %}
+{% block title %}首页{% endblock %}
+{% block content %}
+<div style="max-width:760px;margin:8vh auto 0">
+  <h1 style="font-size:26px;margin-bottom:6px">授权管理系统</h1>
+  <p class="sub" style="font-size:14.5px">本站为软件提供在线授权服务。</p>
+
+  <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:26px">
+    <div class="card">
+      <h2 style="margin-top:0">在线校验</h2>
+      <p class="muted" style="margin-bottom:0">
+        客户端凭授权标识随时向服务端确认有效期，服务端是唯一权威。
+      </p>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">免费试用</h2>
+      <p class="muted" style="margin-bottom:0">
+        首次使用可申请一段试用期，到期前购买即可继续使用。
+      </p>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">订单核销</h2>
+      <p class="muted" style="margin-bottom:0">
+        购买后凭订单号核销，有效期自动叠加到当前到期日之上。
+      </p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h2 style="margin-top:0">怎么使用</h2>
+    <p class="muted" style="margin-bottom:0">
+      授权相关的操作都在你使用的软件里完成，不需要在这个页面上做任何事。
+      遇到问题请联系你购买软件的商家。
+    </p>
+  </div>
+</div>
+{% endblock %}
