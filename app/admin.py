@@ -289,6 +289,70 @@ async def dashboard(request: Request, session: AsyncSession = Depends(db_session
     )
 
 
+@router.post(ADMIN_BASE + "/accounts/bulk")
+async def accounts_bulk(request: Request, session: AsyncSession = Depends(db_session)):
+    """批量封禁 / 解封 / 加减时长。
+
+    勾选的 typekey 由前端用 hx-include 直接作为请求参数送来（同名多值），
+    所以这里手动读 form 而不是走参数绑定 —— 同名多值用声明式参数容易出岔子。
+    """
+    if (response := guard(request)) is not None:
+        return response
+
+    form = await request.form()
+    keys = [str(k).strip() for k in form.getlist("typekey") if str(k).strip()]
+    action = str(form.get("action") or "")
+
+    if not keys:
+        return redirect("/accounts", error="没有勾选任何账户")
+
+    def _int(name: str) -> int:
+        try:
+            return int(str(form.get(name) or "0"))
+        except ValueError:
+            return 0
+
+    months, days = _int("months"), _int("days")
+
+    rows = (
+        (await session.execute(select(LicenseUser).where(LicenseUser.typekey.in_(keys))))
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return redirect("/accounts", error="勾选的账户都不存在了")
+
+    if action == "ban":
+        for row in rows:
+            row.status = "disabled"
+        message = "已封禁 {} 个账户".format(len(rows))
+    elif action == "unban":
+        for row in rows:
+            row.status = "active"
+        message = "已解封 {} 个账户".format(len(rows))
+    elif action == "shift" and (months or days):
+        now = timeutil.now()
+        for row in rows:
+            # 和单条加时、和核销同一套规则：过去的时间从现在起算
+            base = timeutil.later_of(row.exptime, now)
+            if months:
+                base = timeutil.add_months(base, months)
+            if days:
+                base = timeutil.add_days(base, days)
+            row.exptime = base
+        message = "已调整 {} 个账户的有效期".format(len(rows))
+    else:
+        return redirect("/accounts", error="没指定要做什么操作")
+
+    await session.commit()
+
+    if len(rows) != len(keys):
+        message += "（勾了 {} 个，其中 {} 个已不存在）".format(
+            len(keys), len(keys) - len(rows)
+        )
+    return redirect("/accounts", ok=message)
+
+
 # ---------------------------------------------------------------- 账户
 
 

@@ -1,6 +1,8 @@
 {# 账户列表的一行：编辑态。输入框直接落在单元格里，不用嵌套 form ——
    htmx 的 hx-include="closest tr" 会把这一行里的输入全都带上 #}
 <tr id="acct-{{ row.typekey }}" class="is-editing">
+  {# 编辑态下这行的复选框会被换掉，占个位保持列数一致 #}
+  <td class="col-pick"></td>
   <td>
     <code>{{ row.typekey }}</code>
     <input type="hidden" name="typekey" value="{{ row.typekey }}">

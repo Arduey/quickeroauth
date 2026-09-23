@@ -1,5 +1,6 @@
 {# 账户列表的一行：只读态。编辑、取消、保存后都回到这个片段 #}
 <tr id="acct-{{ row.typekey }}">
+  <td class="col-pick"><input type="checkbox" class="acct-check" name="typekey" value="{{ row.typekey }}"></td>
   <td><a href="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}">{{ row.typekey }}</a></td>
   <td>{{ row.user or "—" }}</td>
   <td>{{ row.email or "—" }}</td>

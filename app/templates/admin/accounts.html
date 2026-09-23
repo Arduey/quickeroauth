@@ -18,11 +18,38 @@
 
 <p class="muted">共 {{ total }} 条，第 {{ page }} / {{ pages }} 页</p>
 
+{#
+  批量操作条：勾选的 typekey 由 hx-include 直接作为同名多值参数送出，
+  所以不需要把它们包在 form 里（<form> 也不能包住 <table>）。
+  没勾选时整条隐藏。
+#}
+<div class="bulk" id="bulk-bar" hidden>
+  <span class="bulk-count">已选 <b id="bulk-count">0</b> 个</span>
+
+  <button type="button" class="plain small"
+          hx-post="{{ admin_base }}/accounts/bulk" hx-vals='{"action":"ban"}'
+          hx-include=".acct-check:checked" hx-target="#panel" hx-swap="outerHTML">封禁</button>
+  <button type="button" class="plain small"
+          hx-post="{{ admin_base }}/accounts/bulk" hx-vals='{"action":"unban"}'
+          hx-include=".acct-check:checked" hx-target="#panel" hx-swap="outerHTML">解封</button>
+
+  <span class="bulk-sep"></span>
+
+  {% for label, m, d in [("+1月", 1, 0), ("+3月", 3, 0), ("+1年", 12, 0), ("+7天", 0, 7),
+                          ("-1月", -1, 0), ("-3月", -3, 0), ("-1年", -12, 0)] %}
+  <button type="button" class="plain small"
+          hx-post="{{ admin_base }}/accounts/bulk"
+          hx-vals='{"action":"shift","months":{{ m }},"days":{{ d }}}'
+          hx-include=".acct-check:checked" hx-target="#panel" hx-swap="outerHTML">{{ label }}</button>
+  {% endfor %}
+</div>
+
 {% if rows %}
 <div class="table-scroll">
 <table>
   <thead>
     <tr>
+      <th class="col-pick"><input type="checkbox" id="select-all" title="全选本页"></th>
       <th>账户标识</th><th>用户名</th><th>邮箱</th><th>状态</th>
       <th>过期时间</th><th>使用次数</th><th>上次使用</th><th class="col-act">操作</th>
     </tr>
