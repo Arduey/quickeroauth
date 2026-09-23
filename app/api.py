@@ -293,8 +293,10 @@ async def redeem(payload: RedeemIn, session: AsyncSession = Depends(get_session)
                 if order.get("total") is not None
                 else None
             ),
-            # title 只做留档，不参与任何判断
-            name=str(order.get("title") or "") or None,
+            # 用平台返回的 type，不用 title：
+            # type 才是「亚马逊-Quicker授权」这种真正标识商品的字段，
+            # title 是平台上的展示标题，两者不一样。
+            name=order_type or None,
             sku=str(order.get("sku") or "") or None,
         )
     )

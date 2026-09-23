@@ -4,7 +4,7 @@
 <h1>核销记录</h1>
 
 <form method="get" class="filters">
-  <input type="text" name="q" value="{{ q }}" placeholder="订单号 / 账户标识 / 商品标题">
+  <input type="text" name="q" value="{{ q }}" placeholder="订单号 / 账户标识 / 商品">
   <button type="submit">搜索</button>
   <a class="btn plain" href="{{ admin_base }}/orders">重置</a>
 </form>
@@ -16,7 +16,7 @@
 <table>
   <thead>
     <tr>
-      <th>订单号</th><th>账户标识</th><th>商品标题</th><th>规格</th>
+      <th>订单号</th><th>账户标识</th><th>商品</th><th>规格</th>
       <th>金额</th><th>付款时间</th><th>核销时间</th><th>操作</th>
     </tr>
   </thead>
@@ -25,8 +25,7 @@
     <tr>
       <td>{{ row.ordernumber }}</td>
       <td><a href="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}">{{ row.typekey }}</a></td>
-      <td>{{ row.name or "—" }}</td>
-      <td>{{ row.sku or "—" }}</td>
+      <td>{{ row.name or "—" }}</td>      <td>{{ row.sku or "—" }}</td>
       <td>{{ row.money or "—" }}</td>
       <td class="muted">{{ ordertime_text(row.ordertime) }}</td>
       <td class="muted">{{ usetime_text(row.usetime) }}</td>
