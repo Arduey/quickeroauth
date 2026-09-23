@@ -44,7 +44,6 @@ CREATE TABLE IF NOT EXISTS `license_order` (
   `money`       VARCHAR(32)                                 COMMENT '金额，保留平台原文',
   `name`        VARCHAR(255)                                COMMENT '商品名称，平台原文',
   `sku`         VARCHAR(255)                                COMMENT '规格原文，如 12个月',
-  `count`       INT                                         COMMENT '数量',
   PRIMARY KEY (`ordernumber`),
   KEY `idx_typekey` (`typekey`)
 ) ENGINE = InnoDB

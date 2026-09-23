@@ -57,9 +57,9 @@ async def dispose() -> None:
     SessionLocal = None
 
 
-# 后加的列。新装的库由 schema.sql 直接建好，已经跑着的库靠这里补上，
-# 免得每次加一个字段都要人工去改表。
-SCHEMA_PATCHES: list[tuple[str, str, str]] = [
+# 表结构变更。新装的库由 schema.sql 直接建好，已经跑着的库靠这里跟上，
+# 免得每次改一个字段都要人工去动表。
+SCHEMA_ADDITIONS: list[tuple[str, str, str]] = [
     (
         "license_user",
         "status",
@@ -68,21 +68,41 @@ SCHEMA_PATCHES: list[tuple[str, str, str]] = [
     ),
 ]
 
+# 删列是不可逆的，执行前想清楚
+SCHEMA_REMOVALS: list[tuple[str, str, str]] = [
+    (
+        "license_order",
+        "count",
+        "ALTER TABLE `license_order` DROP COLUMN `count`",
+    ),
+]
+
 
 async def ensure_schema() -> list[str]:
-    """补上缺失的列，返回实际执行过的语句（空列表表示表结构已是最新）。"""
+    """把表结构对齐到最新，返回实际执行过的语句。"""
     applied: list[str] = []
     if SessionLocal is None:
         return applied
 
     async with SessionLocal() as session:
-        for table, column, ddl in SCHEMA_PATCHES:
+        for table, column, ddl in SCHEMA_ADDITIONS:
             exists = (
                 await session.execute(
                     text("SHOW COLUMNS FROM `%s` LIKE '%s'" % (table, column))
                 )
             ).first()
             if exists is None:
+                await session.execute(text(ddl))
+                await session.commit()
+                applied.append(ddl)
+
+        for table, column, ddl in SCHEMA_REMOVALS:
+            exists = (
+                await session.execute(
+                    text("SHOW COLUMNS FROM `%s` LIKE '%s'" % (table, column))
+                )
+            ).first()
+            if exists is not None:
                 await session.execute(text(ddl))
                 await session.commit()
                 applied.append(ddl)

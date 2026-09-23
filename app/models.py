@@ -48,7 +48,6 @@ class LicenseOrder(Base):
     money: Mapped[Optional[str]] = mapped_column(String(32))
     name: Mapped[Optional[str]] = mapped_column(String(255))
     sku: Mapped[Optional[str]] = mapped_column(String(255))
-    count: Mapped[Optional[int]] = mapped_column(Integer)
 
 
 class AdminUser(Base):

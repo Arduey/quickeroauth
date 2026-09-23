@@ -6,10 +6,13 @@
 
 from __future__ import annotations
 
+import csv
+import io
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -772,3 +775,184 @@ async def admins_delete(
     await session.execute(delete(AdminUser).where(AdminUser.username == username))
     await session.commit()
     return redirect("/admins", ok="管理员已删除：" + username)
+
+
+# ---------------------------------------------------------------- 导入旧数据
+
+
+def _pick(row: dict, *names: str) -> str:
+    """按列名取值，容忍大小写和空白的差异，列不存在就返回空串。"""
+    wanted = {name.lower() for name in names}
+    for key, value in row.items():
+        if key and key.strip().lower() in wanted:
+            if value is None:
+                return ""
+            return str(value).strip()
+    return ""
+
+
+def _parse_time(value: str) -> Optional[datetime]:
+    if not value:
+        return None
+    raw = value.strip().replace("T", " ")
+    if "." in raw:
+        raw = raw.split(".")[0]
+    if "+" in raw:
+        raw = raw.split("+")[0].strip()
+    return timeutil.parse(raw)
+
+
+async def _bulk_import(session: AsyncSession, model: Any, rows: list) -> tuple:
+    """返回 (提交行数, 实际新增行数)。已经存在的记录直接跳过，不覆盖。"""
+    from sqlalchemy.dialects.mysql import insert as mysql_insert
+
+    before = int(await session.scalar(select(func.count()).select_from(model)) or 0)
+    statement = mysql_insert(model.__table__).prefix_with("IGNORE")
+    for start in range(0, len(rows), 500):
+        await session.execute(statement, rows[start : start + 500])
+    await session.commit()
+    after = int(await session.scalar(select(func.count()).select_from(model)) or 0)
+    return len(rows), after - before
+
+
+async def _read_csv(upload: UploadFile) -> list:
+    raw = await upload.read()
+    text = None
+    for encoding in ("utf-8-sig", "utf-8", "gbk"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise ValueError("文件编码不认识，请另存为 UTF-8 的 CSV")
+
+    return [dict(row) for row in csv.DictReader(io.StringIO(text))]
+
+
+@router.get(ADMIN_BASE + "/import")
+async def import_page(request: Request):
+    if (response := guard(request)) is not None:
+        return response
+    return render(request, "admin/import.html")
+
+
+@router.post(ADMIN_BASE + "/import/accounts")
+async def import_accounts(
+    request: Request,
+    file: UploadFile = File(...),
+    shift_utc: str = Form(""),
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    try:
+        raw_rows = await _read_csv(file)
+    except ValueError as exc:
+        return redirect("/import", error=str(exc))
+
+    if not raw_rows:
+        return redirect("/import", error="这个 CSV 里没有数据")
+
+    offset = timedelta(hours=8) if shift_utc else timedelta(0)
+    rows = []
+    skipped = 0
+
+    for raw in raw_rows:
+        typekey = _pick(raw, "typekey")
+        if not typekey or len(typekey) > 64:
+            skipped += 1
+            continue
+
+        addtime = _parse_time(_pick(raw, "addtime"))
+        exptime = _parse_time(_pick(raw, "exptime"))
+        if exptime is None:
+            skipped += 1
+            continue
+
+        if offset:
+            if addtime is not None:
+                addtime = addtime + offset
+            exptime = exptime + offset
+
+        count_raw = _pick(raw, "count")
+        try:
+            count_value = int(count_raw) if count_raw else 0
+        except ValueError:
+            count_value = 0
+
+        rows.append(
+            {
+                "typekey": typekey,
+                "addtime": addtime or exptime,
+                "exptime": exptime,
+                "status": "active",
+                "last_time": _parse_time(_pick(raw, "last_time")),
+                "user": _pick(raw, "user") or None,
+                "email": _pick(raw, "email") or None,
+                "count": count_value,
+            }
+        )
+
+    if not rows:
+        return redirect("/import", error="没有一行能识别，检查一下列名对不对")
+
+    submitted, inserted = await _bulk_import(session, LicenseUser, rows)
+    message = "账户：读到 {} 行，新增 {} 条，已存在跳过 {} 条".format(
+        submitted, inserted, submitted - inserted
+    )
+    if skipped:
+        message += "，另有 {} 行格式不对被忽略".format(skipped)
+    return redirect("/import", ok=message)
+
+
+@router.post(ADMIN_BASE + "/import/orders")
+async def import_orders(
+    request: Request,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(db_session),
+):
+    if (response := guard(request)) is not None:
+        return response
+
+    try:
+        raw_rows = await _read_csv(file)
+    except ValueError as exc:
+        return redirect("/import", error=str(exc))
+
+    if not raw_rows:
+        return redirect("/import", error="这个 CSV 里没有数据")
+
+    rows = []
+    skipped = 0
+
+    for raw in raw_rows:
+        ordernumber = _pick(raw, "ordernumber")
+        typekey = _pick(raw, "typekey")
+        if not ordernumber or len(ordernumber) > 64 or not typekey:
+            skipped += 1
+            continue
+
+        rows.append(
+            {
+                "ordernumber": ordernumber,
+                "typekey": typekey,
+                "ordertime": _parse_time(_pick(raw, "ordertime")),
+                "usetime": _parse_time(_pick(raw, "usetime")),
+                "money": _pick(raw, "money") or None,
+                "name": _pick(raw, "name") or None,
+                "sku": _pick(raw, "sku") or None,
+            }
+        )
+
+    if not rows:
+        return redirect("/import", error="没有一行能识别，检查一下列名对不对")
+
+    submitted, inserted = await _bulk_import(session, LicenseOrder, rows)
+    message = "记录：读到 {} 行，新增 {} 条，已存在跳过 {} 条".format(
+        submitted, inserted, submitted - inserted
+    )
+    if skipped:
+        message += "，另有 {} 行格式不对被忽略".format(skipped)
+    return redirect("/import", ok=message)

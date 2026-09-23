@@ -280,7 +280,6 @@ async def redeem(payload: RedeemIn, session: AsyncSession = Depends(get_session)
             # title 只做留档，不参与任何判断
             name=str(order.get("title") or "") or None,
             sku=str(order.get("sku") or "") or None,
-            count=1,
         )
     )
 

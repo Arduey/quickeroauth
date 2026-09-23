@@ -1,0 +1,46 @@
+{% extends "admin/base.html" %}
+{% block title %}导入旧数据{% endblock %}
+{% block content %}
+<h1>导入旧数据</h1>
+<p class="muted">
+  从旧系统导出的 CSV 可以直接传上来。列名按旧表的名字识别，多出来的列会被忽略；
+  已经存在的记录会跳过，不会覆盖现有数据。
+</p>
+
+<div class="card">
+  <h2 style="margin-top:0">授权账户（旧表 <code>tooltype</code>）</h2>
+  <p class="muted">需要的列：typekey、addtime、exptime、last_time、user、email、count</p>
+  <form method="post" action="{{ admin_base }}/import/accounts" enctype="multipart/form-data">
+    <label>选择 CSV 文件
+      <input type="file" name="file" accept=".csv,text/csv">
+    </label>
+    <label>
+      <input type="checkbox" name="shift_utc" value="1" checked style="width:auto;display:inline-block;margin-right:6px">
+      addtime / exptime 是 UTC 时间，导入时加 8 小时
+    </label>
+    <button type="submit">导入账户</button>
+  </form>
+  <p class="muted" style="margin-bottom:0">
+    旧系统里 <code>addtime</code> / <code>exptime</code> 存的是 UTC，<code>last_time</code> 存的却是北京时间
+    —— 这是历史遗留的不一致，所以单独给了个开关。数据如果本来就是你手工维护的，把勾去掉。
+  </p>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h2 style="margin-top:0">核销记录（旧表 <code>toolorder</code>）</h2>
+  <p class="muted">需要的列：ordernumber、typekey、ordertime、usetime、money、name、sku</p>
+  <form method="post" action="{{ admin_base }}/import/orders" enctype="multipart/form-data">
+    <label>选择 CSV 文件
+      <input type="file" name="file" accept=".csv,text/csv">
+    </label>
+    <button type="submit">导入记录</button>
+  </form>
+  <p class="muted" style="margin-bottom:0">这些时间在旧系统里已经是北京时间，原样搬过来。</p>
+</div>
+
+<h2>从旧系统导出 CSV</h2>
+<p class="muted">
+  在 supabase 控制台打开 Table Editor → 选表 → 右上角的导出按钮 → CSV。
+  两张表各导一次，然后回到这个页面上传。
+</p>
+{% endblock %}
