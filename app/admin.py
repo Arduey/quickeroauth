@@ -8,9 +8,13 @@ SessionMiddleware，Cookie 是 HttpOnly + SameSite=Lax）。
 
 from __future__ import annotations
 
+from typing import Optional
+
 from sqladmin import Admin, ModelView
 from sqladmin.authentication import AuthenticationBackend
 from sqlalchemy import select
+from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
 from . import config, db, security, timeutil
@@ -28,6 +32,16 @@ def client_ip(request: Request) -> str:
 
 
 class AdminAuth(AuthenticationBackend):
+    def __init__(self, secret_key: str, max_age: Optional[int] = None) -> None:
+        super().__init__(secret_key=secret_key)
+        # 自己装会话中间件，不用 sqladmin 转发的 kwargs。
+        # 各版本这里行为不一致：有的认 session_max_age，有的把它原样丢给
+        # Starlette 的 SessionMiddleware，而后者只认 max_age，于是启动后在
+        # 构建中间件时直接崩。与其猜参数名，不如以 Starlette 的口径装。
+        self.middlewares = [
+            Middleware(SessionMiddleware, secret_key=secret_key, max_age=max_age)
+        ]
+
     async def login(self, request: Request) -> bool:
         ip = client_ip(request)
 
@@ -188,13 +202,7 @@ class SettingAdmin(ModelView, model=Setting):
 
 def build_admin(app, engine) -> Admin:
     secret_key = str((config.get() or {}).get("secret_key") or "")
-    max_age = config.session_hours() * 3600
-
-    try:
-        backend = AdminAuth(secret_key=secret_key, session_max_age=max_age)
-    except TypeError:
-        # session_max_age 是 sqladmin 较新版本才有的参数，老版本回退到默认会话时长
-        backend = AdminAuth(secret_key=secret_key)
+    backend = AdminAuth(secret_key=secret_key, max_age=config.session_hours() * 3600)
 
     admin = Admin(
         app=app,
