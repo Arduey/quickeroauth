@@ -1,1 +1,14 @@
-# 占位，内容见下一个提交
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# 安装向导生成的配置，含会话密钥和数据库密码
+config.json
+
+*.log
+.idea/
+.vscode/
+.DS_Store

@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>安装向导 · 授权管理系统</title>
+<style>
+  :root { --line:#e3e6ea; --ink:#1f2328; --muted:#6b7280; --brand:#2563eb;
+          --ok:#15803d; --err:#b91c1c; --bg:#f5f6f8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:780px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:20px 22px; }
+  h2 { font-size:16px; margin:0 0 16px; }
+  .steps { display:flex; flex-wrap:wrap; gap:6px; list-style:none; padding:0; margin:0 0 18px; }
+  .steps li { font-size:12px; color:var(--muted); border:1px solid var(--line);
+              border-radius:999px; padding:3px 10px; background:#fff; }
+  .steps li.on { color:#fff; background:var(--brand); border-color:var(--brand); }
+  table { width:100%; border-collapse:collapse; }
+  td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); font-size:13px; }
+  .ok { color:var(--ok); font-weight:700; }
+  .bad { color:var(--err); font-weight:700; }
+  label { display:block; margin-bottom:12px; font-size:13px; color:var(--muted); }
+  input[type=text], input[type=password], input[type=number] {
+    display:block; width:100%; margin-top:4px; padding:8px 10px;
+    border:1px solid var(--line); border-radius:6px; font-size:14px; color:var(--ink); }
+  .check { display:flex; align-items:center; gap:6px; color:var(--ink); }
+  .check input { margin:0; }
+  .grid { display:flex; gap:12px; }
+  .grid > label { flex:1; }
+  button, .btn { display:inline-block; margin-top:8px; padding:9px 18px; border:0;
+                 border-radius:6px; background:var(--brand); color:#fff;
+                 font-size:14px; cursor:pointer; text-decoration:none; }
+  .alert { border:1px solid #f3c6c6; background:#fff5f5; color:var(--err);
+           border-radius:6px; padding:10px 12px; margin-bottom:16px; font-size:13px; }
+  .note { color:var(--muted); font-size:12.5px; margin-top:10px; }
+  .hint { color:var(--muted); }
+  pre { max-height:300px; overflow:auto; background:#f8f9fb; border:1px solid var(--line);
+        border-radius:6px; padding:12px; font-size:12px; line-height:1.5; }
+  code { background:#f0f2f5; padding:1px 5px; border-radius:4px; }
+  .done-box p { margin:8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>授权管理系统 · 安装向导</h1>
+  <p class="sub">全程在浏览器里完成，不需要命令行。</p>
+
+  <ol class="steps">
+    {% for i, label in [(1,"环境自检"),(2,"数据库"),(3,"建表"),(4,"管理员"),(5,"站点设置"),(6,"完成")] %}
+    <li class="{% if step == i %}on{% endif %}">{{ i }}. {{ label }}</li>
+    {% endfor %}
+  </ol>
+
+  {% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+  {% if step == 1 %}
+  <div class="card">
+    <h2>第 1 步 · 环境自检</h2>
+    <table>
+      <tbody>
+      {% for item in checks %}
+        <tr>
+          <td style="width:36px" class="{{ 'ok' if item.ok else 'bad' }}">{{ "✓" if item.ok else "✗" }}</td>
+          <td>{{ item.name }}</td>
+          <td class="hint">{{ item.detail }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if all_ok %}
+      <a class="btn" href="/install/db">下一步</a>
+    {% else %}
+      <p class="note">上面有标红的项，通常是依赖没装上。解决之后刷新本页重新自检。</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if step == 2 %}
+  <div class="card">
+    <h2>第 2 步 · 数据库</h2>
+    <p class="note" style="margin-top:0">填宝塔「数据库」里建好的那一套。主机一般就是 <code>127.0.0.1</code>。</p>
+    <form method="post" action="/install/db">
+      <div class="grid">
+        <label>主机 <input type="text" name="host" value="{{ db.host }}"></label>
+        <label>端口 <input type="text" name="port" value="{{ db.port }}"></label>
+      </div>
+      <div class="grid">
+        <label>用户名 <input type="text" name="user" value="{{ db.user }}"></label>
+        <label>密码 <input type="password" name="password" value="{{ db.password }}"></label>
+      </div>
+      <label>数据库名 <input type="text" name="database" value="{{ db.database }}"></label>
+      <label class="check">
+        <input type="checkbox" name="autocreate" value="1" {% if autocreate %}checked{% endif %}>
+        <span>库不存在时自动创建</span>
+      </label>
+      <button type="submit">测试连接并继续</button>
+    </form>
+    {% if db_version %}<p class="note">上次连接成功：{{ db_version }}</p>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if step == 3 %}
+  <div class="card">
+    <h2>第 3 步 · 初始化表结构</h2>
+    <p class="note" style="margin-top:0">下面是即将执行的建表语句，全是 <code>CREATE TABLE IF NOT EXISTS</code>，重复执行不会清空已有数据。</p>
+    <pre>{{ schema_sql }}</pre>
+    <form method="post" action="/install/schema">
+      <button type="submit">执行建表</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if step == 4 %}
+  <div class="card">
+    <h2>第 4 步 · 管理员账号</h2>
+    <p class="note" style="margin-top:0">这是后台登录用的账号，不是给用户用的。</p>
+    <form method="post" action="/install/admin">
+      <label>登录名 <input type="text" name="username" autocomplete="off"></label>
+      <label>密码 <input type="password" name="password" autocomplete="new-password"></label>
+      <label>确认密码 <input type="password" name="password2" autocomplete="new-password"></label>
+      <button type="submit">创建并继续</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if step == 5 %}
+  <div class="card">
+    <h2>第 5 步 · 站点设置</h2>
+    <form method="post" action="/install/site">
+      <label>站点域名 <input type="text" name="site_domain" value="{{ site.site_domain }}" placeholder="lic.example.com"></label>
+      <div class="grid">
+        <label>默认试用天数 <input type="number" name="trial_days" min="1" value="{{ site.trial_days }}"></label>
+        <label>会话有效期（小时） <input type="number" name="session_hours" min="1" value="{{ site.session_hours }}"></label>
+      </div>
+      <label>发卡平台地址 <input type="text" name="platform_base_url" value="{{ site.platform_base_url }}"></label>
+      <label>商户邮箱（查单用） <input type="text" name="platform_email" value="{{ site.platform_email }}"></label>
+      <label>后台路径 <input type="text" name="admin_path" value="{{ site.admin_path }}"></label>
+      <p class="note">平台地址、商户邮箱、试用天数装完可以在后台随时改；后台路径改完需要重启进程。</p>
+      <button type="submit">保存并完成安装</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if step == 6 %}
+  <div class="card">
+    {% if done %}
+      <h2>安装完成</h2>
+      <div class="done-box">
+        <p>后台地址：<code>https://{{ site_domain }}{{ admin_path }}</code></p>
+        <p><strong>请到宝塔「网站 → Python 项目」点一下「重启」</strong>，让新配置生效。</p>
+        <p class="hint">重启后打开上面的地址，用第 4 步设置的账号登录。之后 <code>/install</code> 会自动失效。</p>
+      </div>
+    {% elif already %}
+      <h2>系统已安装</h2>
+      <div class="done-box">
+        <p>不需要重复安装。</p>
+        <p class="hint">确实要重装的话，手动删掉项目根目录下的 <code>config.json</code>，再访问本页。</p>
+      </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>
