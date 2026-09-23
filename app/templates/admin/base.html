@@ -312,8 +312,13 @@
   .bulk[hidden] { display: none; }
   .bulk-count { font-size: 13px; color: var(--ink-2); margin-right: 2px; }
   .bulk-sep { width: 1px; height: 18px; background: #cdd9f5; margin: 0 4px; }
-  .bulk-num {
-    width: 62px; margin-top: 0; padding: 5px 8px;
+  /*
+    用 .bulk input.bulk-num 提权：上面 input[type=number] 那条是 width:100%，
+    优先级比单独的 .bulk-num 高，不提权就会被它盖掉、变成一行一个的满宽框。
+  */
+  .bulk input.bulk-num {
+    width: 62px; flex: 0 0 auto;
+    margin-top: 0; padding: 5px 8px;
     font-size: 12.5px; text-align: center;
   }
   /* 数字输入框的上下箭头在这么窄的框里太挤，去掉 */
