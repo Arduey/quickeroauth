@@ -15,3 +15,6 @@ install_state.json
 .idea/
 .vscode/
 .DS_Store
+
+# 从旧系统导出的数据文件，含用户邮箱，不进版本库
+*_rows.json

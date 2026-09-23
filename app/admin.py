@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
@@ -815,7 +816,8 @@ async def _bulk_import(session: AsyncSession, model: Any, rows: list) -> tuple:
     return len(rows), after - before
 
 
-async def _read_csv(upload: UploadFile) -> list:
+async def _read_rows(upload: UploadFile) -> list:
+    """读上传的文件。CSV 和 JSON 都认——supabase 的 Table Editor 两种都能导。"""
     raw = await upload.read()
     text = None
     for encoding in ("utf-8-sig", "utf-8", "gbk"):
@@ -825,7 +827,30 @@ async def _read_csv(upload: UploadFile) -> list:
         except UnicodeDecodeError:
             continue
     if text is None:
-        raise ValueError("文件编码不认识，请另存为 UTF-8 的 CSV")
+        raise ValueError("文件编码不认识，请另存为 UTF-8")
+
+    name = (upload.filename or "").lower()
+    stripped = text.lstrip()
+    looks_like_json = name.endswith(".json") or stripped.startswith(("[", "{"))
+
+    if looks_like_json:
+        try:
+            data = json.loads(text)
+        except ValueError:
+            raise ValueError("JSON 解析失败，检查一下文件有没有被截断")
+
+        if isinstance(data, dict):
+            for key in ("data", "rows", "records", "result"):
+                if isinstance(data.get(key), list):
+                    data = data[key]
+                    break
+            else:
+                data = [data]
+
+        if not isinstance(data, list):
+            raise ValueError("JSON 结构不认识，期望是一个对象数组")
+
+        return [row for row in data if isinstance(row, dict)]
 
     return [dict(row) for row in csv.DictReader(io.StringIO(text))]
 
@@ -848,12 +873,12 @@ async def import_accounts(
         return response
 
     try:
-        raw_rows = await _read_csv(file)
+        raw_rows = await _read_rows(file)
     except ValueError as exc:
         return redirect("/import", error=str(exc))
 
     if not raw_rows:
-        return redirect("/import", error="这个 CSV 里没有数据")
+        return redirect("/import", error="文件里没有数据")
 
     offset = timedelta(hours=8) if shift_utc else timedelta(0)
     rows = []
@@ -917,12 +942,12 @@ async def import_orders(
         return response
 
     try:
-        raw_rows = await _read_csv(file)
+        raw_rows = await _read_rows(file)
     except ValueError as exc:
         return redirect("/import", error=str(exc))
 
     if not raw_rows:
-        return redirect("/import", error="这个 CSV 里没有数据")
+        return redirect("/import", error="文件里没有数据")
 
     rows = []
     skipped = 0
