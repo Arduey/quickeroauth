@@ -313,6 +313,7 @@ async def accounts_bulk(request: Request, session: AsyncSession = Depends(db_ses
             return 0
 
     months, days = _int("months"), _int("days")
+    years = _int("years")
 
     rows = (
         (await session.execute(select(LicenseUser).where(LicenseUser.typekey.in_(keys))))
@@ -330,17 +331,26 @@ async def accounts_bulk(request: Request, session: AsyncSession = Depends(db_ses
         for row in rows:
             row.status = "active"
         message = "已解封 {} 个账户".format(len(rows))
-    elif action == "shift" and (months or days):
+    elif action == "shift" and (months or days or years):
         now = timeutil.now()
         for row in rows:
-            # 和单条加时、和核销同一套规则：过去的时间从现在起算
+            # 和单条加时、和核销同一套规则：过去的时间从现在起算。
+            # 年直接折成 12 个月，不必单独实现一套按年加减。
             base = timeutil.later_of(row.exptime, now)
-            if months:
-                base = timeutil.add_months(base, months)
+            total_months = months + years * 12
+            if total_months:
+                base = timeutil.add_months(base, total_months)
             if days:
                 base = timeutil.add_days(base, days)
             row.exptime = base
-        message = "已调整 {} 个账户的有效期".format(len(rows))
+        parts = []
+        if years:
+            parts.append("{} 年".format(years))
+        if months:
+            parts.append("{} 月".format(months))
+        if days:
+            parts.append("{} 天".format(days))
+        message = "已把 {} 个账户的有效期调整 {}".format(len(rows), " ".join(parts))
     else:
         return redirect("/accounts", error="没指定要做什么操作")
 

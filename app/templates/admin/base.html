@@ -303,6 +303,14 @@
   .bulk[hidden] { display: none; }
   .bulk-count { font-size: 13px; color: var(--ink-2); margin-right: 2px; }
   .bulk-sep { width: 1px; height: 18px; background: #cdd9f5; margin: 0 4px; }
+  .bulk-num {
+    width: 62px; margin-top: 0; padding: 5px 8px;
+    font-size: 12.5px; text-align: center;
+  }
+  /* 数字输入框的上下箭头在这么窄的框里太挤，去掉 */
+  .bulk-num::-webkit-outer-spin-button,
+  .bulk-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .bulk-num { -moz-appearance: textfield; appearance: textfield; }
 
   /* ---------------------------------------------------------------- 其它 */
 

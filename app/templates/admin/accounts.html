@@ -42,6 +42,17 @@
           hx-vals='{"action":"shift","months":{{ m }},"days":{{ d }}}'
           hx-include=".acct-check:checked" hx-target="#panel" hx-swap="outerHTML">{{ label }}</button>
   {% endfor %}
+
+  <span class="bulk-sep"></span>
+
+  {# 自定义增减：正数加、负数减，留空的按 0 算 #}
+  <input type="number" class="bulk-num" name="years" placeholder="年" step="1" title="年，可填负数">
+  <input type="number" class="bulk-num" name="months" placeholder="月" step="1" title="月，可填负数">
+  <input type="number" class="bulk-num" name="days" placeholder="日" step="1" title="日，可填负数">
+  <button type="button"
+          hx-post="{{ admin_base }}/accounts/bulk" hx-vals='{"action":"shift"}'
+          hx-include=".acct-check:checked, .bulk-num"
+          hx-target="#panel" hx-swap="outerHTML">应用</button>
 </div>
 
 {% if rows %}
