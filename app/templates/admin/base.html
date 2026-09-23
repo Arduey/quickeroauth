@@ -346,6 +346,66 @@
 </main>
 
 {% if not partial %}
+<script>
+// 快捷加时的日期计算放在浏览器里做：点一下就走一个 HTTP 往返太慢，
+// 而最终提交时服务端会按填进去的值重新存，不需要它参与这一过程。
+// 月份加法必须和 app/timeutil.py 的 add_months 同一条规则 ——
+// 两边的结果不一致，用户会看到「点的时候一个日期、存下去另一个」。
+(function () {
+  var pad = function (n) { return String(n).padStart(2, "0"); };
+  var fmt = function (d) {
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+           " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  };
+
+  function parse(text) {
+    var m = String(text || "").trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{1,2}):(\d{1,2})/);
+    if (!m) return null;
+    var d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // 月末溢出取当月最后一天：1月31日 + 1个月 = 2月28/29日
+  function addMonths(date, months) {
+    var day = date.getDate();
+    var target = new Date(date.getFullYear(), date.getMonth() + months, 1);
+    var lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+    target.setDate(Math.min(day, lastDay));
+    target.setHours(date.getHours(), date.getMinutes(), date.getSeconds());
+    return target;
+  }
+
+  function addDays(date, days) {
+    var d = new Date(date.getTime());
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-add-months], [data-add-days]");
+    if (!btn) return;
+    var cell = btn.closest("td") || btn.closest(".card");
+    var input = cell && cell.querySelector('input[name="exptime"]');
+    if (!input) return;
+
+    e.preventDefault();
+
+    var months = parseInt(btn.getAttribute("data-add-months") || "0", 10) || 0;
+    var days = parseInt(btn.getAttribute("data-add-days") || "0", 10) || 0;
+
+    // 基准值取输入框里当前的值，连点就连续以新值为基准叠加；
+    // 它是过去（或空、或格式不对）就从现在起算 —— 和核销、和后台「加时」一致
+    var base = parse(input.value);
+    var now = new Date();
+    if (!base || base.getTime() < now.getTime()) base = now;
+
+    if (months) base = addMonths(base, months);
+    if (days) base = addDays(base, days);
+
+    input.value = fmt(base);
+  });
+})();
+</script>
 </body>
 </html>
 {% endif %}

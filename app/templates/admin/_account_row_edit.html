@@ -21,20 +21,14 @@
            placeholder="2026-03-01 12:00:00"
            autocomplete="off">
     {#
-      快捷按钮只算不写：拿这一格里当前的值（已经过去就从现在起算）加上时长，
-      回填进同一个输入框，等你自己确认后再点「保存」。
-      连续点就连续叠加以输入框里的新值为基准 —— 所以这里必须用 id 精确指到那个
-      输入框；用 closest td 之类的相对写法在某些情况下收集不到值，就会退化成
-      「每次都从此刻算起」。
+      快捷按钮在浏览器里直接算，不走服务端 —— 点一下一个往返太慢，
+      而且最终提交时服务端会按填进去的值重新存，不需要它参与这个过程。
+      月份加法和服务端 timeutil.add_months 保持同一条规则（月末溢出取当月最后一天）。
     #}
     <div class="quick">
-      {% for label, qs in [("+1月", "months=1"), ("+3月", "months=3"), ("+1年", "months=12"), ("+7天", "days=7")] %}
-      <button type="button" class="plain"
-              hx-post="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row/preview?{{ qs }}"
-              hx-include="#ex-{{ row.typekey }}"
-              hx-target="#ex-{{ row.typekey }}"
-              hx-swap="outerHTML"
-              hx-push-url="false">{{ label }}</button>
+      {% for label, attrs in [("+1月", 'data-add-months="1"'), ("+3月", 'data-add-months="3"'),
+                              ("+1年", 'data-add-months="12"'), ("+7天", 'data-add-days="7"')] %}
+      <button type="button" class="plain" {{ attrs|safe }}>{{ label }}</button>
       {% endfor %}
     </div>
     {% if row_error %}<div class="field-err">{{ row_error }}</div>{% endif %}

@@ -640,46 +640,6 @@ async def account_row_save(
     return _row_response(request, row)
 
 
-@router.post(ADMIN_BASE + "/accounts/{typekey}/row/preview")
-async def account_row_preview(
-    request: Request,
-    typekey: str,
-    months: int = 0,
-    days: int = 0,
-):
-    """只算不写：把加完之后的到期时间回填到输入框，等用户自己点保存。
-
-    规则和核销一致，另外按输入框里的值判断：填的是过去的时间，就从现在起算。
-
-    基准值显式地「请求体优先、其次 query」两处都读：之前把它声明成普通 str
-    参数，FastAPI 按 query 解析，而 htmx 是放在请求体里的，于是永远读到空串，
-    连点就不叠加了。依赖框架的参数绑定规则在这里太脆。
-    """
-    if (response := guard(request)) is not None:
-        return response
-
-    form = await request.form()
-    exptime = str(form.get("exptime") or request.query_params.get("exptime") or "")
-
-    parsed = timeutil.parse(exptime)
-    if parsed is None:
-        # 空着或格式不对，就以现在为基准，别让按钮点了没反应
-        parsed = timeutil.now()
-
-    now = timeutil.now()
-    base = timeutil.later_of(parsed, now)
-    if months:
-        base = timeutil.add_months(base, months)
-    if days:
-        base = timeutil.add_days(base, days)
-
-    return templates.TemplateResponse(
-        request,
-        "admin/_exptime_input.html",
-        {"input_id": "ex-" + typekey, "value": timeutil.fmt(base) or ""},
-    )
-
-
 # ---------------------------------------------------------------- 订单
 
 

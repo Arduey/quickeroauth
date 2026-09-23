@@ -34,12 +34,9 @@
   <div class="card">
     <h2 style="margin-top:0">加时长</h2>
     <div class="quick" style="margin-bottom:8px">
-      {% for label, qs in [("+1月", "months=1"), ("+3月", "months=3"), ("+1年", "months=12"), ("+7天", "days=7")] %}
-      <button type="button"
-              hx-post="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row/preview?{{ qs }}"
-              hx-include="#ex-{{ row.typekey }}"
-              hx-target="#ex-{{ row.typekey }}"
-              hx-swap="outerHTML">{{ label }}</button>
+      {% for label, attrs in [("+1月", 'data-add-months="1"'), ("+3月", 'data-add-months="3"'),
+                              ("+1年", 'data-add-months="12"'), ("+7天", 'data-add-days="7"')] %}
+      <button type="button" {{ attrs|safe }}>{{ label }}</button>
       {% endfor %}
     </div>
     <p class="muted" style="margin:0 0 12px">
@@ -54,8 +51,7 @@
       <button type="submit">加时</button>
     </form>
     <p class="muted" style="margin-bottom:0">
-      这排按钮走的是同一套规则，但<strong>只改输入框、不写库</strong>；
-      下面这个「加时」是直接生效的。
+      这排按钮<strong>只改输入框、不写库</strong>；下面这个「加时」是直接生效的。
     </p>
     <p class="muted" style="margin-bottom:0">
       未过期就从原到期日往后加，已过期就从现在起算。
