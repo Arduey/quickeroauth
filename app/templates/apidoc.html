@@ -1,0 +1,86 @@
+{% extends "admin/base.html" %}
+{% block title %}接口说明{% endblock %}
+{% block content %}
+<div style="max-width:860px;margin:4vh auto 0">
+
+  <h1 style="font-size:26px;margin-bottom:6px">接口说明</h1>
+  <p class="sub" style="font-size:14.5px">
+    三个接口，用于客户端申请试用、校验授权、核销订单。全部为 <code>POST</code>，请求与响应都是 JSON。
+  </p>
+
+  <div class="card" style="margin-bottom:18px">
+    <h2 style="margin-top:0">通用约定</h2>
+    <table style="box-shadow:none;border:0">
+      <tbody>
+        <tr><td style="width:110px"><strong>响应包</strong></td>
+            <td><code>{ "code": "...", "message": "...", "data": {...} }</code></td></tr>
+        <tr><td><strong>状态码</strong></td>
+            <td>业务结果一律 <code>200</code>，靠 <code>code</code> 区分；仅请求格式非法或服务自身出错才用非 200</td></tr>
+        <tr><td><strong>时间格式</strong></td>
+            <td><code>YYYY-MM-DD HH:MM:SS</code>，北京时间，不带时区后缀</td></tr>
+        <tr><td><strong>message</strong></td>
+            <td>中文提示，可直接展示给用户；判断逻辑请用 <code>code</code>，不要比对文案</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% for api in apis %}
+  <div class="card" style="margin-bottom:18px">
+    <h2 style="margin-top:0">
+      {{ api.index }}. {{ api.name }}
+      <code style="margin-left:8px">{{ api.method }} {{ api.path }}</code>
+    </h2>
+    <p class="muted">{{ api.summary }}</p>
+
+    <p class="muted" style="margin-bottom:4px">请求</p>
+    <pre style="background:var(--line-soft);border-radius:7px;padding:12px;overflow:auto;font-size:12.5px;line-height:1.6;margin:0 0 14px">{{ api.request }}</pre>
+
+    <p class="muted" style="margin-bottom:4px">成功响应</p>
+    <pre style="background:var(--line-soft);border-radius:7px;padding:12px;overflow:auto;font-size:12.5px;line-height:1.6;margin:0 0 14px">{{ api.response }}</pre>
+
+    <p class="muted" style="margin-bottom:4px">返回码</p>
+    <div class="table-scroll" style="box-shadow:none">
+      <table>
+        <thead><tr><th style="width:210px">code</th><th style="width:210px">message</th><th>说明</th></tr></thead>
+        <tbody>
+          {% for code, message, note in api.codes %}
+          <tr><td><code>{{ code }}</code></td><td>{{ message }}</td><td class="muted">{{ note }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="card">
+    <h2 style="margin-top:0">调用示例</h2>
+    <p class="muted" style="margin-bottom:4px">校验授权</p>
+<pre style="background:var(--line-soft);border-radius:7px;padding:12px;overflow:auto;font-size:12.5px;line-height:1.6;margin:0 0 14px">curl -X POST {{ site_url }}/api/verify \
+  -H "Content-Type: application/json" \
+  -d '{"typekey":"Pro-8f3a91c2"}'</pre>
+
+    <p class="muted" style="margin-bottom:4px">JavaScript</p>
+<pre style="background:var(--line-soft);border-radius:7px;padding:12px;overflow:auto;font-size:12.5px;line-height:1.6;margin:0 0 14px">const res = await fetch("{{ site_url }}/api/verify", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ typekey: "Pro-8f3a91c2" }),
+});
+const data = await res.json();
+if (data.code === "ACTIVE") {
+  // data.data.exptime 是到期时间
+}</pre>
+
+    <p class="muted" style="margin-bottom:4px">Python</p>
+<pre style="background:var(--line-soft);border-radius:7px;padding:12px;overflow:auto;font-size:12.5px;line-height:1.6;margin:0">import requests
+
+resp = requests.post(
+    "{{ site_url }}/api/verify",
+    json={"typekey": "Pro-8f3a91c2"},
+    timeout=5,
+)
+data = resp.json()
+print(data["message"])</pre>
+  </div>
+
+</div>
+{% endblock %}
