@@ -57,7 +57,11 @@ API_DOCS: list[dict] = [
         "name": "订单核销",
         "method": "POST",
         "path": "/api/redeem",
-        "summary": "凭订单号延长有效期。订单真伪由服务端向发卡平台核对，客户端只传订单号。",
+        "summary": (
+            "凭订单号延长有效期。订单真伪由服务端向发卡平台核对，客户端只传订单号。"
+            "如果这个标识还不存在，服务端会自动建号，先给一天垫底再加上订单时长 —— "
+            "这样「先付款、后安装」的用户也能直接用。"
+        ),
         "request": '{\n  "typekey": "Pro-8f3a91c2",\n  "ordernumber": "AFD2026021400001"\n}',
         "response": '{\n  "code": "REDEEMED",\n  "message": "订单使用成功，有效期至 2027-03-01 13:05:22",\n  "data": {\n    "typekey": "Pro-8f3a91c2",\n    "ordernumber": "AFD2026021400001",\n    "exptime": "2027-03-01 13:05:22",\n    "permanent": false,\n    "added_months": 12\n  }\n}',
         "codes": [
