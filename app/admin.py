@@ -675,6 +675,39 @@ async def account_row_grant(
     await session.commit()
     return _row_response(request, row)
 
+@router.post(ADMIN_BASE + "/accounts/{typekey}/row/preview")
+async def account_row_preview(
+    request: Request,
+    typekey: str,
+    exptime: str = "",
+    months: int = 0,
+    days: int = 0,
+):
+    """只算不写：把加完之后的到期时间回填到输入框，等用户自己点保存。
+
+    规则和核销一致，另外按输入框里的值判断：填的是过去的时间，就从现在起算。
+    """
+    if (response := guard(request)) is not None:
+        return response
+
+    parsed = timeutil.parse(exptime)
+    if parsed is None:
+        # 空着或格式不对，就以现在为基准，别让按钮点了没反应
+        parsed = timeutil.now()
+
+    now = timeutil.now()
+    base = timeutil.later_of(parsed, now)
+    if months:
+        base = timeutil.add_months(base, months)
+    if days:
+        base = timeutil.add_days(base, days)
+
+    return templates.TemplateResponse(
+        request,
+        "admin/_exptime_input.html",
+        {"input_id": "ex-" + typekey, "value": timeutil.fmt(base) or ""},
+    )
+
 
 # ---------------------------------------------------------------- 订单
 

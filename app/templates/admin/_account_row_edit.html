@@ -14,13 +14,23 @@
     </select>
   </td>
   <td>
-    <input type="text" name="exptime" value="{{ exptime_text }}" placeholder="2026-03-01 12:00:00">
-    {# 快捷加时：走服务端同一套规则，避免手算日期出错 #}
+    <input type="text"
+           id="ex-{{ row.typekey }}"
+           name="exptime"
+           value="{{ exptime_text }}"
+           placeholder="2026-03-01 12:00:00"
+           autocomplete="off">
+    {#
+      快捷按钮只算不写：拿这一格里当前的值（已经过去就从现在起算）加上时长，
+      把结果回填进同一个输入框，等你自己确认后再点「保存」。
+    #}
     <div class="quick">
       {% for label, qs in [("+1月", "months=1"), ("+3月", "months=3"), ("+1年", "months=12"), ("+7天", "days=7")] %}
       <button type="button" class="plain"
-              hx-post="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row/grant?{{ qs }}"
-              hx-target="closest tr" hx-swap="outerHTML"
+              hx-post="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row/preview?{{ qs }}"
+              hx-include="closest td"
+              hx-target="#ex-{{ row.typekey }}"
+              hx-swap="outerHTML"
               hx-push-url="false">{{ label }}</button>
       {% endfor %}
     </div>

@@ -18,7 +18,11 @@
       <label>用户名<input type="text" name="user" value="{{ row.user or '' }}"></label>
       <label>邮箱<input type="text" name="email" value="{{ row.email or '' }}"></label>
       <label>过期时间（格式 2026-03-01 12:00:00）
-        <input type="text" name="exptime" value="{{ exptime_text }}">
+        <input type="text"
+               id="ex-{{ row.typekey }}"
+               name="exptime"
+               value="{{ exptime_text }}"
+               autocomplete="off">
       </label>
       <label>使用次数
         <input type="text" name="count" value="{{ row.count if row.count is not none else '' }}">
@@ -29,13 +33,19 @@
 
   <div class="card">
     <h2 style="margin-top:0">加时长</h2>
-    <div class="quick" style="margin-bottom:12px">
+    <div class="quick" style="margin-bottom:8px">
       {% for label, qs in [("+1月", "months=1"), ("+3月", "months=3"), ("+1年", "months=12"), ("+7天", "days=7")] %}
       <button type="button"
-              hx-post="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/grant?{{ qs }}"
-              hx-target="#panel" hx-swap="outerHTML">{{ label }}</button>
+              hx-post="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/row/preview?{{ qs }}"
+              hx-include="#ex-{{ row.typekey }}"
+              hx-target="#ex-{{ row.typekey }}"
+              hx-swap="outerHTML">{{ label }}</button>
       {% endfor %}
     </div>
+    <p class="muted" style="margin:0 0 12px">
+      点一下会把算好的时间填进左边的「过期时间」，确认后再点保存。
+      原时间是过去的话，从现在起算。
+    </p>
     <form method="post" action="{{ admin_base }}/accounts/{{ row.typekey | urlencode }}/grant">
       <div class="row">
         <label>加几个月<input type="number" name="months" value="0"></label>
@@ -43,6 +53,10 @@
       </div>
       <button type="submit">加时</button>
     </form>
+    <p class="muted" style="margin-bottom:0">
+      这排按钮走的是同一套规则，但<strong>只改输入框、不写库</strong>；
+      下面这个「加时」是直接生效的。
+    </p>
     <p class="muted" style="margin-bottom:0">
       未过期就从原到期日往后加，已过期就从现在起算。
     </p>
