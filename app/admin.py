@@ -271,6 +271,34 @@ async def dashboard(request: Request, session: AsyncSession = Depends(db_session
         .all()
     )
 
+    # 最近使用过：last_time 为空表示从没用过，排除掉
+    recently_used = (
+        (
+            await session.execute(
+                select(LicenseUser)
+                .where(LicenseUser.last_time.is_not(None))
+                .order_by(LicenseUser.last_time.desc())
+                .limit(10)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # 使用次数最多：count 为 0 / NULL 的排除了没意义
+    most_used = (
+        (
+            await session.execute(
+                select(LicenseUser)
+                .where(LicenseUser.count > 0)
+                .order_by(LicenseUser.count.desc())
+                .limit(10)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     return render(
         request,
         "admin/dashboard.html",
@@ -284,6 +312,8 @@ async def dashboard(request: Request, session: AsyncSession = Depends(db_session
         },
         recent_orders=recent_orders,
         expiring=expiring,
+        recently_used=recently_used,
+        most_used=most_used,
         now=now,
         account_state=account_state,
     )
