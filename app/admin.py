@@ -462,6 +462,8 @@ async def accounts(
         pages=pages,
         q=q,
         state=state,
+        sort=sort_key,
+        order=sort_order,
         now=now,
         account_state=account_state,
     )
