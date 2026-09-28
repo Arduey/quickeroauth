@@ -366,6 +366,32 @@ async def accounts_bulk(request: Request, session: AsyncSession = Depends(db_ses
 # ---------------------------------------------------------------- 账户
 
 
+# 允许排序的列。用白名单把前端传来的字符串映射到真实列对象 ——
+# 绝不把用户输入拼进 ORDER BY。
+SORTABLE: dict[str, Any] = {
+    "typekey": LicenseUser.typekey,
+    "user": LicenseUser.user,
+    "email": LicenseUser.email,
+    "exptime": LicenseUser.exptime,
+    "count": LicenseUser.count,
+    "last_time": LicenseUser.last_time,
+    "addtime": LicenseUser.addtime,
+}
+DEFAULT_SORT = "addtime"
+DEFAULT_ORDER = "desc"
+
+
+def _clean_sort(sort: str, order: str) -> tuple:
+    """校验排序参数，非法就退回默认值。"""
+    key = (sort or "").strip()
+    if key not in SORTABLE:
+        key = DEFAULT_SORT
+    direction = (order or "").strip().lower()
+    if direction not in ("asc", "desc"):
+        direction = DEFAULT_ORDER
+    return key, direction
+
+
 def _account_filters(q: str, state: str, now):
     conditions = []
     keyword = (q or "").strip()
@@ -393,6 +419,8 @@ async def accounts(
     q: str = "",
     state: str = "",
     page: int = 1,
+    sort: str = DEFAULT_SORT,
+    order: str = DEFAULT_ORDER,
     session: AsyncSession = Depends(db_session),
 ):
     if (response := guard(request)) is not None:
@@ -400,9 +428,13 @@ async def accounts(
 
     now = timeutil.now()
     conditions = _account_filters(q, state, now)
+    sort_key, sort_order = _clean_sort(sort, order)
+    column = SORTABLE[sort_key]
 
     count_query = select(func.count()).select_from(LicenseUser)
-    list_query = select(LicenseUser).order_by(LicenseUser.addtime.desc())
+    list_query = select(LicenseUser).order_by(
+        column.desc() if sort_order == "desc" else column.asc()
+    )
     for condition in conditions:
         count_query = count_query.where(condition)
         list_query = list_query.where(condition)
