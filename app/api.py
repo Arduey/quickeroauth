@@ -46,6 +46,8 @@ class VerifyIn(BaseModel):
 class RedeemIn(BaseModel):
     typekey: str = ""
     ordernumber: str = ""
+    user: Optional[str] = None
+    email: Optional[str] = None
 
 
 # ---------------------------------------------------------------- 工具
@@ -66,6 +68,20 @@ def clean_optional(raw: Optional[str]) -> Optional[str]:
     """空字符串按未传处理——不覆盖库里已有的值。"""
     value = (raw or "").strip()
     return value or None
+
+
+def _apply_contact(row: LicenseUser, user: Optional[str], email: Optional[str]) -> bool:
+    """把非空的 user / email 覆盖到账户上，空值不覆盖。返回是否真的改了。"""
+    new_user = clean_optional(user)
+    new_email = clean_optional(email)
+    changed = False
+    if new_user:
+        changed = row.user != new_user
+        row.user = new_user
+    if new_email:
+        changed = changed or (row.email != new_email)
+        row.email = new_email
+    return changed
 
 
 def parse_sku(sku: str) -> Tuple[Optional[int], bool]:
@@ -122,6 +138,10 @@ async def trial(payload: TrialIn, session: AsyncSession = Depends(get_session)):
     # 一个 typekey 终身只能领一次——这是试用的全部规则，不做 IP 限流
     existing = await session.get(LicenseUser, typekey)
     if existing is not None:
+        # 试用期不重发，但 user / email 传了非空值就顺手覆盖，
+        # 让客户端能在这里把用户信息补全。
+        _apply_contact(existing, payload.user, payload.email)
+        await session.commit()
         return envelope("TRIAL_ALREADY_USED", "不支持多次试用", user_summary(existing))
 
     trial_days = await site_settings.get_int(session, "trial_days", 1)
@@ -145,6 +165,9 @@ async def trial(payload: TrialIn, session: AsyncSession = Depends(get_session)):
         # 并发下另一个请求抢先建了号，退回到「已领过」
         await session.rollback()
         existing = await session.get(LicenseUser, typekey)
+        if existing is not None:
+            _apply_contact(existing, payload.user, payload.email)
+            await session.commit()
         data = user_summary(existing) if existing is not None else None
         return envelope("TRIAL_ALREADY_USED", "不支持多次试用", data)
 
@@ -172,17 +195,18 @@ async def verify(payload: VerifyIn, session: AsyncSession = Depends(get_session)
     now = timeutil.now()
     active = row.exptime > now
 
+    # user / email 只要传了非空值就更新，过期与否都接受覆盖——
+    # 客户端通常一直在带这两个字段，用户改邮箱时账户可能恰好已到期。
+    changed = _apply_contact(row, payload.user, payload.email)
+
     if active:
         row.last_time = now
         row.count = (row.count or 0) + 1
-        new_user = clean_optional(payload.user)
-        new_email = clean_optional(payload.email)
-        if new_user:
-            row.user = new_user
-        if new_email:
-            row.email = new_email
+        changed = True
+    # 已过期：不计数、不更新 last_time，但仍接受 user / email 覆盖
+
+    if changed:
         await session.commit()
-    # 已过期：不计数、不更新 last_time、也不接受 user / email 覆盖
 
     data = {
         "typekey": row.typekey,
@@ -276,12 +300,19 @@ async def redeem(payload: RedeemIn, session: AsyncSession = Depends(get_session)
         base_expiry = row.exptime
 
     if is_permanent:
-        new_expiry = timeutil.PERMANENT
+        # 永久 = 在 max(原到期时间, 现在) 的基础上再加 100 年。
+        # 和其他规格共用同一条叠加规则，只是单位从「月」换成「年」。
+        new_expiry = timeutil.add_years(
+            timeutil.later_of(base_expiry, now), timeutil.PERMANENT_YEARS
+        )
     else:
         new_expiry = timeutil.add_months(
             timeutil.later_of(base_expiry, now), months
         )
     row.exptime = new_expiry
+
+    # 联系方式：传了非空就覆盖，无论是新建还是续期的关联账户。
+    _apply_contact(row, payload.user, payload.email)
 
     session.add(
         LicenseOrder(

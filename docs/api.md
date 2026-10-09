@@ -42,7 +42,7 @@ POST /api/trial
 }
 ```
 
-`user` / `email` 可为空或省略。**空字符串一律按未传处理**，不写进数据库（保持字段干净）。
+`user` / `email` 可为空或省略。**空字符串一律按未传处理**（不覆盖、不清空）。新建账户时写入；账户已存在时，传了非空值也会覆盖。
 
 **响应**
 
@@ -61,18 +61,18 @@ POST /api/trial
 | code | message | 说明 |
 |---|---|---|
 | `TRIAL_GRANTED` | 申请已通过 | 新建账户成功，`exptime = 现在 + 1 天` |
-| `TRIAL_ALREADY_USED` | 不支持多次试用 | `typekey` 已存在，**不改动任何字段**，原样返回现有 `addtime` / `exptime` |
+| `TRIAL_ALREADY_USED` | 不支持多次试用 | `typekey` 已存在，试用期不重发；`user` / `email` 传了非空会被覆盖，其余字段原样返回 |
 | `INVALID_KEY` | 授权标识无效 | `typekey` 为空或超长 |
 
 **逻辑**
 
 1. 校验 `typekey` 非空、长度 ≤ 64
 2. 查 `license_user`：
-   - 存在 → 直接返回 `TRIAL_ALREADY_USED` + 原有 `addtime` / `exptime`
+   - 存在 → `user` / `email` 非空则覆盖，返回 `TRIAL_ALREADY_USED` + 原有 `addtime` / `exptime`
    - 不存在 → `INSERT`，`addtime` / `exptime` 由数据库默认值与 `现在 + 1 天` 写入，而后返回 `TRIAL_GRANTED`
 3. 并发下依赖 `typekey` 主键兜底：插入冲突则回退到第 2 步的「已存在」分支
 
-**试用的唯一规则**：一个 `typekey` 终身只能领一次。首次访问建号并给 1 天，之后再访问一律返回 `TRIAL_ALREADY_USED`，不改动任何字段。不做 IP 限流。
+**试用的唯一规则**：一个 `typekey` 终身只能领一次。首次访问建号并给 1 天，之后再访问一律返回 `TRIAL_ALREADY_USED`，试用期不重发（仅 `user` / `email` 可被非空覆盖）。不做 IP 限流。
 
 ---
 
@@ -90,7 +90,7 @@ POST /api/verify
 }
 ```
 
-`user` / `email` 可选，**仅当传了非空值时才覆盖**数据库里的原值（空值不覆盖、不清空）。
+`user` / `email` 可选，**仅当传了非空值时才覆盖**数据库里的原值（空值不覆盖、不清空）。**账户过期（`EXPIRED`）时同样接受覆盖**，只有被封禁（`DISABLED`）和不存在时才完全不写库。
 
 **响应**
 
@@ -111,18 +111,22 @@ POST /api/verify
 | code | message | 说明 |
 |---|---|---|
 | `ACTIVE` | 未过期 | `exptime` 晚于当前北京时间 |
-| `EXPIRED` | 已过期 | `exptime` 早于或等于当前北京时间 |
+| `EXPIRED` | 已过期 | `exptime` 早于或等于当前北京时间；不计数、不更新 `last_time`，但接受非空 `user` / `email` 覆盖 |
+| `DISABLED` | 账户已被禁用 | 被后台封禁，即使没到期也拒绝，不接受任何修改 |
 | `NOT_FOUND` | 不存在 | 账户不存在 |
 | `INVALID_KEY` | 授权标识无效 | `typekey` 为空或超长 |
 
 **逻辑**
 
 1. 查 `license_user`：不存在 → `NOT_FOUND`，**不写库**
-2. 用 `exptime` 与当前北京时间比较 → `ACTIVE` / `EXPIRED`
-3. **只有 `ACTIVE` 才写库**：`last_time = 当前北京时间`，`count = count + 1`，`user` / `email` 按非空规则覆盖
-4. 返回 `addtime` / `exptime` / `last_time` / `count`
+2. 被封禁（`status != active`）→ `DISABLED`，**不写库**
+3. 用 `exptime` 与当前北京时间比较 → `ACTIVE` / `EXPIRED`
+4. `user` / `email` 按非空规则覆盖（`ACTIVE` / `EXPIRED` 都会做）
+5. **只有 `ACTIVE` 才计数**：`last_time = 当前北京时间`，`count = count + 1`
+6. 返回 `addtime` / `exptime` / `last_time` / `count`
 
-**`EXPIRED` 和 `NOT_FOUND` 一律不碰数据库**——不计数、不更新 `last_time`、也不接受 `user` / `email` 的覆盖。
+**`EXPIRED` 时**：不计数、不更新 `last_time`，但仍接受 `user` / `email` 的非空覆盖。
+**`NOT_FOUND` 和 `DISABLED` 一律不碰数据库**。
 
 ---
 
@@ -137,11 +141,13 @@ POST /api/redeem
 ```json
 {
   "typekey": "Pro-8f3a91c2",
-  "ordernumber": "AFD2026021400001"
+  "ordernumber": "AFD2026021400001",
+  "user": "张三",
+  "email": "a@b.com"
 }
 ```
 
-客户端**只传订单号**，不传任何订单内容。订单真伪由服务端自己去平台核对。
+订单本身**只传订单号**，不传任何订单内容，订单真伪由服务端自己去平台核对。可选的 `user` / `email` 传了非空值会覆盖到账户上（新建账户时即为初始值）。
 
 ### 3.2 服务端查单
 
@@ -219,11 +225,12 @@ GET {platform_base}/api/order/query?email={商户邮箱}&order_no={ordernumber}
 3. 请求 `GET /api/order/query`，超时 5 秒；超时或平台 5xx → `PLATFORM_UNAVAILABLE`
 4. 非 2xx 或 `ok != true` → `ORDER_NOT_FOUND`
 5. **`data.type` 必须等于 `typekey` 的前缀**（`typekey.split("-")[0]`），否则 `PRODUCT_MISMATCH`。这是订单归属的唯一校验
-6. 解析 `sku`：取数字部分为月数；中文部分含「永久」→ `9999` 个月、含「年」→ `数字 × 12`、含「月」→ `数字`；都不含则 `PRODUCT_MISMATCH`
+6. 解析 `sku`：取数字部分为月数；中文部分含「永久」→ 有效期加 100 年、含「年」→ `数字 × 12`、含「月」→ `数字`；都不含则 `PRODUCT_MISMATCH`
 7. 保证 `license_user` 存在：不存在则以 1 天有效期建号
-8. 算新到期时间：原 `exptime` 未过期 → 从原值叠加；已过期 → 从现在起算
-9. 事务内：`UPDATE license_user.exptime` + `INSERT license_order`（`ordertime` 存 `creat_time`、`money` 存 `total` 的字符串形式、`count` 存 `1`）
-10. 返回成功与新到期时间
+8. 算新到期时间：永久 → `max(原 exptime, 现在) + 100 年`；其余 → `max(原 exptime, 现在) + 月数`
+9. `user` / `email` 按非空规则覆盖到账户上（空值不覆盖；新建账户时即为初始值）
+10. 事务内：`UPDATE license_user.exptime` + `INSERT license_order`（`ordertime` 存 `creat_time`、`money` 存 `total` 的字符串形式、`name` 存平台的 `type`、`sku` 存原样）
+11. 返回成功与新到期时间
 
 **并发**：两个请求同时核销同一单，靠 `ordernumber` 主键冲突兜底，后到者转为 `ORDER_ALREADY_USED`（而不是抛 500）。
 
@@ -239,7 +246,7 @@ GET {platform_base}/api/order/query?email={商户邮箱}&order_no={ordernumber}
 | `title` | — | **忽略** |
 | `seller` | — | **忽略** |
 
-平台不提供「数量」，所以**不存在倍数**：一笔订单的 `sku` 决定加多长，就加多长。相应地 `license_order.count` 这一列没有数据来源，一律写 `1`（或者干脆删掉这一列，你定）。
+平台不提供「数量」，所以**不存在倍数**：一笔订单的 `sku` 决定加多长，就加多长。因此 `license_order` 表不再保留 `count` 列（已从表结构删除，`db.ensure_schema()` 会在老库上补删）。
 
 ---
 
@@ -248,7 +255,7 @@ GET {platform_base}/api/order/query?email={商户邮箱}&order_no={ordernumber}
 | # | 项 | 状态 |
 |---|---|---|
 | 1 | 发卡平台的查单接口 | **已定**：`GET /api/order/query`，公开接口，参数为「商户邮箱 + 订单号」，只返回已支付订单 |
-| 2 | `EXPIRED` 时是否计数 / 更新 `last_time`、`user`、`email` | **已定**：一律不写库 |
+| 2 | `EXPIRED` 时是否计数 / 更新 `last_time`、`user`、`email` | **已定**：不计数、不更新 `last_time`；但 `user` / `email` 非空仍覆盖（仅 `DISABLED` / `NOT_FOUND` 完全不写库） |
 | 3 | 产品线前缀的实现方式 | 前缀确认**不固定**；是否维护产品线表待定 |
 | 4 | 试用申请的限流 | **已定**：不做 IP 限流，一个 `typekey` 终身只能领一次 |
 | 5 | 订单归属校验 | **已定**：平台返回的 `type` 与 `typekey` 前缀比对 |

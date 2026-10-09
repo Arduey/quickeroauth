@@ -32,7 +32,7 @@ API_DOCS: list[dict] = [
         "response": '{\n  "code": "TRIAL_GRANTED",\n  "message": "申请已通过",\n  "data": {\n    "typekey": "Pro-8f3a91c2",\n    "addtime": "2026-03-01 13:05:22",\n    "exptime": "2026-03-02 13:05:22"\n  }\n}',
         "codes": [
             ("TRIAL_GRANTED", "申请已通过", "新建成功，有效期从此刻起一天"),
-            ("TRIAL_ALREADY_USED", "不支持多次试用", "该标识已存在；不改动任何字段，原样返回原有时间"),
+            ("TRIAL_ALREADY_USED", "不支持多次试用", "该标识已存在，试用期不重发；传了非空 user/email 会被覆盖，其余字段原样返回"),
             ("INVALID_KEY", "授权标识无效", "为空或超过 64 个字符"),
         ],
     },
@@ -41,13 +41,13 @@ API_DOCS: list[dict] = [
         "name": "在线校验",
         "method": "POST",
         "path": "/api/verify",
-        "summary": "确认授权当前是否有效。只有有效时才会计数并更新「上次使用时间」。",
+        "summary": "确认授权当前是否有效。只有有效时才会计数并更新「上次使用时间」；user/email 传了非空值无论过期与否都会覆盖。",
         "request": '{\n  "typekey": "Pro-8f3a91c2",\n  "user": "张三",          // 可选，非空才覆盖\n  "email": "a@b.com"      // 可选，非空才覆盖\n}',
         "response": '{\n  "code": "ACTIVE",\n  "message": "未过期",\n  "data": {\n    "typekey": "Pro-8f3a91c2",\n    "addtime": "2026-03-01 13:05:22",\n    "exptime": "2027-03-01 13:05:22",\n    "last_time": "2026-03-02 09:12:00",\n    "count": 13\n  }\n}',
         "codes": [
             ("ACTIVE", "未过期", "有效；已计数并更新 last_time"),
-            ("EXPIRED", "已过期", "到期时间早于或等于当前时间"),
-            ("DISABLED", "账户已被禁用", "被后台封禁，即使没到期也拒绝"),
+            ("EXPIRED", "已过期", "到期时间早于或等于当前时间；不计数不更新 last_time，但接受非空 user/email 覆盖"),
+            ("DISABLED", "账户已被禁用", "被后台封禁，即使没到期也拒绝（不接受任何修改）"),
             ("NOT_FOUND", "不存在", "账户不存在；不写库"),
             ("INVALID_KEY", "授权标识无效", "为空或超过 64 个字符"),
         ],
@@ -61,8 +61,9 @@ API_DOCS: list[dict] = [
             "凭订单号延长有效期。订单真伪由服务端向发卡平台核对，客户端只传订单号。"
             "如果这个标识还不存在，服务端会自动建号，先给一天垫底再加上订单时长 —— "
             "这样「先付款、后安装」的用户也能直接用。"
+            "可选的 user / email 传了非空值会一并覆盖到账户上。"
         ),
-        "request": '{\n  "typekey": "Pro-8f3a91c2",\n  "ordernumber": "AFD2026021400001"\n}',
+        "request": '{\n  "typekey": "Pro-8f3a91c2",\n  "ordernumber": "AFD2026021400001",\n  "user": "张三",          // 可选，非空才覆盖\n  "email": "a@b.com"      // 可选，非空才覆盖\n}',
         "response": '{\n  "code": "REDEEMED",\n  "message": "订单使用成功，有效期至 2027-03-01 13:05:22",\n  "data": {\n    "typekey": "Pro-8f3a91c2",\n    "ordernumber": "AFD2026021400001",\n    "exptime": "2027-03-01 13:05:22",\n    "permanent": false,\n    "added_months": 12,\n    "created": false      // 本次是否顺带新建了账户\n  }\n}',
         "codes": [
             ("REDEEMED", "订单使用成功，有效期至 …", "核销成功。data.created 为 true 表示本次顺带新建了账户，客户端应提醒用户核对标识"),
