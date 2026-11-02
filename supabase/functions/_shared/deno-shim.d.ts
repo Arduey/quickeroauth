@@ -1,4 +1,5 @@
 // 仅用于本地 tsc 静态检查的 Deno 环境声明（不参与 Supabase 部署）。
+
 declare namespace Deno {
   function serve(handler: (req: Request) => Response | Promise<Response>): void;
   namespace env {
@@ -6,11 +7,15 @@ declare namespace Deno {
   }
 }
 
-declare module "https://deno.land/x/mysql@v2.12.1/mod.ts" {
-  export class Client {
-    connect(config: Record<string, unknown>): Promise<Client>;
-    query(sql: string, params?: unknown[]): Promise<unknown[]>;
-    execute(sql: string, params?: unknown[]): Promise<unknown>;
-    close(): Promise<void>;
+declare module "npm:mysql2@3.24.6/promise" {
+  interface Connection {
+    query(sql: string, params?: unknown[]): Promise<[unknown, unknown]>;
+    execute(sql: string, params?: unknown[]): Promise<[unknown, unknown]>;
+    end(): Promise<void>;
   }
+  interface Mysql {
+    createConnection(config: Record<string, unknown>): Promise<Connection>;
+  }
+  const mysql: Mysql;
+  export default mysql;
 }
